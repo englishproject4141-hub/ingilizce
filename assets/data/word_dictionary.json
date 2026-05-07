@@ -1,0 +1,227 @@
+{
+  "remote": {
+    "word": "remote",
+    "ipa": "/rɪˈmoʊt/",
+    "pos": "adjective",
+    "definition": "Far away from places where other people live; relating to work done from a location other than a traditional office.",
+    "turkish": "uzak; uzaktan",
+    "example": "She prefers working in a remote location.",
+    "family": ["remotely", "remoteness"]
+  },
+  "discipline": {
+    "word": "discipline",
+    "ipa": "/ˈdɪs.ə.plɪn/",
+    "pos": "noun",
+    "definition": "The practice of training people to obey rules or a code of behavior; controlled behavior.",
+    "turkish": "disiplin",
+    "example": "Learning a new language takes discipline.",
+    "family": ["disciplined", "disciplinary"]
+  },
+  "flexibility": {
+    "word": "flexibility",
+    "ipa": "/ˌflɛk.sɪˈbɪl.ɪ.ti/",
+    "pos": "noun",
+    "definition": "The quality of bending easily without breaking; willingness to change or compromise.",
+    "turkish": "esneklik",
+    "example": "The job offers great flexibility in working hours.",
+    "family": ["flexible", "flexibly", "inflexible"]
+  },
+  "productive": {
+    "word": "productive",
+    "ipa": "/prəˈdʌk.tɪv/",
+    "pos": "adjective",
+    "definition": "Achieving a significant amount of results; producing a lot.",
+    "turkish": "verimli, üretken",
+    "example": "I feel most productive in the morning.",
+    "family": ["productivity", "productively", "unproductive"]
+  },
+  "boundary": {
+    "word": "boundary",
+    "ipa": "/ˈbaʊn.dər.i/",
+    "pos": "noun",
+    "definition": "A line that marks the limits of an area; a dividing line.",
+    "turkish": "sınır",
+    "example": "It's important to set boundaries between work and life.",
+    "family": ["boundaries", "bound", "bounded"]
+  },
+  "professional": {
+    "word": "professional",
+    "ipa": "/prəˈfɛʃ.ən.əl/",
+    "pos": "adjective",
+    "definition": "Relating to or connected with a profession; showing a high level of skill.",
+    "turkish": "profesyonel, mesleki",
+    "example": "She has a very professional approach to her work.",
+    "family": ["profession", "professionally", "professionalism"]
+  },
+  "essential": {
+    "word": "essential",
+    "ipa": "/ɪˈsɛn.ʃəl/",
+    "pos": "adjective",
+    "definition": "Absolutely necessary; extremely important.",
+    "turkish": "temel, zorunlu",
+    "example": "Water is essential for life.",
+    "family": ["essentially", "essence", "essentials"]
+  },
+  "dedicated": {
+    "word": "dedicated",
+    "ipa": "/ˈdɛd.ɪ.keɪ.tɪd/",
+    "pos": "adjective",
+    "definition": "Devoted to a task or purpose; having strong feelings of support.",
+    "turkish": "adanmış, özel",
+    "example": "She is a dedicated teacher.",
+    "family": ["dedicate", "dedication"]
+  },
+  "communication": {
+    "word": "communication",
+    "ipa": "/kəˌmjuː.nɪˈkeɪ.ʃən/",
+    "pos": "noun",
+    "definition": "The imparting or exchanging of information by speaking, writing, or using other media.",
+    "turkish": "iletişim",
+    "example": "Good communication is key to teamwork.",
+    "family": ["communicate", "communicative", "communicator"]
+  },
+  "colleague": {
+    "word": "colleague",
+    "ipa": "/ˈkɒl.iːɡ/",
+    "pos": "noun",
+    "definition": "A person with whom one works, especially in a profession or business.",
+    "turkish": "iş arkadaşı, meslektaş",
+    "example": "I discussed the project with my colleague.",
+    "family": ["colleagues"]
+  },
+  "environment": {
+    "word": "environment",
+    "ipa": "/ɪnˈvaɪ.rən.mənt/",
+    "pos": "noun",
+    "definition": "The surroundings or conditions in which a person, animal, or plant lives or operates.",
+    "turkish": "çevre, ortam",
+    "example": "A quiet environment helps me focus.",
+    "family": ["environmental", "environmentally", "environmentalist"]
+  },
+  "misunderstandings": {
+    "word": "misunderstandings",
+    "ipa": "/ˌmɪs.ʌn.dəˈstæn.dɪŋz/",
+    "pos": "noun",
+    "definition": "Failures to interpret something correctly; situations where something is misunderstood.",
+    "turkish": "yanlış anlamalar",
+    "example": "Clear emails can prevent misunderstandings.",
+    "family": ["misunderstand", "misunderstood", "understanding"]
+  },
+  "technology": {
+    "word": "technology",
+    "ipa": "/tɛkˈnɒl.ə.dʒi/",
+    "pos": "noun",
+    "definition": "The application of scientific knowledge for practical purposes, especially in industry.",
+    "turkish": "teknoloji",
+    "example": "Technology has changed the way we work.",
+    "family": ["technological", "technologically", "tech"]
+  },
+  "artificial": {
+    "word": "artificial",
+    "ipa": "/ˌɑːr.tɪˈfɪʃ.əl/",
+    "pos": "adjective",
+    "definition": "Made or produced by human beings rather than occurring naturally.",
+    "turkish": "yapay",
+    "example": "Artificial intelligence is transforming industries.",
+    "family": ["artificially", "artifact"]
+  },
+  "intelligence": {
+    "word": "intelligence",
+    "ipa": "/ɪnˈtɛl.ɪ.dʒəns/",
+    "pos": "noun",
+    "definition": "The ability to acquire and apply knowledge and skills.",
+    "turkish": "zeka",
+    "example": "Emotional intelligence is important in leadership.",
+    "family": ["intelligent", "intelligently", "unintelligent"]
+  },
+  "efficiently": {
+    "word": "efficiently",
+    "ipa": "/ɪˈfɪʃ.ənt.li/",
+    "pos": "adverb",
+    "definition": "In a way that achieves maximum productivity with minimum wasted effort.",
+    "turkish": "verimli bir şekilde",
+    "example": "She manages her time very efficiently.",
+    "family": ["efficient", "efficiency", "inefficient"]
+  },
+  "productivity": {
+    "word": "productivity",
+    "ipa": "/ˌprɒd.ʌkˈtɪv.ɪ.ti/",
+    "pos": "noun",
+    "definition": "The effectiveness of productive effort; the rate of output per unit of input.",
+    "turkish": "verimlilik",
+    "example": "Our productivity increased after adopting new tools.",
+    "family": ["productive", "productively", "unproductive"]
+  },
+  "routine": {
+    "word": "routine",
+    "ipa": "/ruːˈtiːn/",
+    "pos": "noun",
+    "definition": "A sequence of actions regularly followed; a fixed program.",
+    "turkish": "rutin",
+    "example": "A morning routine helps me start the day well.",
+    "family": ["routinely", "routines"]
+  },
+  "achievable": {
+    "word": "achievable",
+    "ipa": "/əˈtʃiː.və.bəl/",
+    "pos": "adjective",
+    "definition": "Able to be brought about or reached successfully.",
+    "turkish": "ulaşılabilir, başarılabilir",
+    "example": "Set small, achievable goals every day.",
+    "family": ["achieve", "achievement", "achiever"]
+  },
+  "commute": {
+    "word": "commute",
+    "ipa": "/kəˈmjuːt/",
+    "pos": "noun / verb",
+    "definition": "A regular journey of some distance to and from one's place of work.",
+    "turkish": "iş-ev arası yolculuk",
+    "example": "My daily commute takes about an hour.",
+    "family": ["commuter", "commuting"]
+  },
+  "lifestyle": {
+    "word": "lifestyle",
+    "ipa": "/ˈlaɪf.staɪl/",
+    "pos": "noun",
+    "definition": "The way in which a person or group lives.",
+    "turkish": "yaşam tarzı",
+    "example": "Remote work can lead to a healthier lifestyle.",
+    "family": ["lifestyles"]
+  },
+  "mastering": {
+    "word": "mastering",
+    "ipa": "/ˈmæs.tər.ɪŋ/",
+    "pos": "verb (gerund)",
+    "definition": "Acquiring complete knowledge or skill in something.",
+    "turkish": "ustalaşma, hâkim olma",
+    "example": "Mastering a language requires daily practice.",
+    "family": ["master", "mastery", "masterful"]
+  },
+  "schedule": {
+    "word": "schedule",
+    "ipa": "/ˈʃɛd.juːl/",
+    "pos": "noun / verb",
+    "definition": "A plan for carrying out a process or procedure.",
+    "turkish": "program, takvim",
+    "example": "I need to check my schedule for tomorrow.",
+    "family": ["scheduled", "scheduling", "reschedule"]
+  },
+  "signal": {
+    "word": "signal",
+    "ipa": "/ˈsɪɡ.nəl/",
+    "pos": "noun / verb",
+    "definition": "A gesture, action, or sound that is used to convey information or instructions.",
+    "turkish": "sinyal, işaret vermek",
+    "example": "Closing your laptop can signal that your workday is over.",
+    "family": ["signaling", "signaled", "signals"]
+  },
+  "stress": {
+    "word": "stress",
+    "ipa": "/strɛs/",
+    "pos": "noun",
+    "definition": "A state of mental or emotional strain resulting from demanding circumstances.",
+    "turkish": "stres",
+    "example": "Exercise is a good way to reduce stress.",
+    "family": ["stressful", "stressed", "stressor"]
+  }
+}
