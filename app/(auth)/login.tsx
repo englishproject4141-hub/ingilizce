@@ -66,7 +66,7 @@ export default function LoginScreen() {
       setLoadingProvider('google');
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       await authService.signInWithGoogle();
-      router.replace('/(tabs)');
+      router.replace('/onboarding');
     } catch (e) {
       Alert.alert('Google girisi basarisiz', e instanceof Error ? e.message : 'Tekrar dene.');
     } finally {
@@ -79,7 +79,7 @@ export default function LoginScreen() {
       setLoadingProvider('apple');
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       await authService.signInWithApple();
-      router.replace('/(tabs)');
+      router.replace('/onboarding');
     } catch (e) {
       Alert.alert('Apple girisi basarisiz', e instanceof Error ? e.message : 'Tekrar dene.');
     } finally {
@@ -160,7 +160,7 @@ export default function LoginScreen() {
 
           <TouchableOpacity
             style={[styles.secondaryButton, { backgroundColor: 'transparent', borderWidth: 1, borderColor: Colors.border }]}
-            onPress={() => router.replace('/(tabs)')}
+            onPress={() => router.replace('/onboarding')}
             activeOpacity={0.8}
           >
             <Text style={[styles.secondaryButtonText, { color: Colors.text.secondary }]}>Girişi Atla (Geliştirici Modu)</Text>

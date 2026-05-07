@@ -19,6 +19,7 @@ import Animated, {
   ZoomIn,
 } from 'react-native-reanimated';
 import { StepIndicator } from '../../components/Onboarding/StepIndicator';
+import PlacementTest from '../../components/Onboarding/PlacementTest';
 import { Check, ChevronRight } from 'lucide-react-native';
 import { Colors, Spacing, Typography } from '../../constants/theme';
 
@@ -34,6 +35,7 @@ const ONBOARDING_STEPS = [
 export default function OnboardingScreen() {
   const [currentStep, setCurrentStep] = useState(0);
   const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
+  const [userLevel, setUserLevel] = useState<string>('A1');
   const router = useRouter();
 
   const translateX = useSharedValue(0);
@@ -104,11 +106,10 @@ export default function OnboardingScreen() {
       <Animated.View style={[styles.stepsContainer, animatedContainerStyle]}>
         {/* Step 1: Level Test */}
         <View style={styles.step}>
-          <Text style={styles.title}>Seviye Testi</Text>
-          <Text style={styles.description}>İngilizce seviyenizi belirlemek için kısa bir test yapacağız.</Text>
-          <View style={styles.placeholderCard}>
-            <Text style={styles.placeholderText}>[Test Soruları]</Text>
-          </View>
+          <PlacementTest onComplete={(level) => {
+            setUserLevel(level);
+            nextStep();
+          }} />
         </View>
 
         {/* Step 2: Interests */}
@@ -149,7 +150,7 @@ export default function OnboardingScreen() {
             <Animated.View entering={ZoomIn.springify()} style={styles.successIcon}>
               <Check size={48} color={Colors.accent.green} strokeWidth={2.5} />
             </Animated.View>
-            <Text style={styles.title}>B1 Seviyesindesin!</Text>
+            <Text style={styles.title}>{userLevel} Seviyesindesin!</Text>
             <Text style={styles.description}>Profilin hazırlandı. Harika bir yolculuğa hazır ol.</Text>
           </View>
         </View>
@@ -159,20 +160,22 @@ export default function OnboardingScreen() {
         {currentStep === 1 && selectedInterests.length === 0 && (
           <Text style={styles.errorText}>En az 1 konu seçin</Text>
         )}
-        <Animated.View style={shakeStyle}>
-          <TouchableOpacity 
-            style={[
-              styles.button,
-              currentStep === 3 && { backgroundColor: Colors.text.primary }
-            ]} 
-            onPress={nextStep}
-          >
-            <Text style={styles.buttonText}>
-              {currentStep === 3 ? 'Başlayalım' : 'Devam Et'}
-            </Text>
-            <ChevronRight color="#FFF" size={20} />
-          </TouchableOpacity>
-        </Animated.View>
+        {currentStep !== 0 && (
+          <Animated.View style={shakeStyle}>
+            <TouchableOpacity 
+              style={[
+                styles.button,
+                currentStep === 3 && { backgroundColor: Colors.text.primary }
+              ]} 
+              onPress={nextStep}
+            >
+              <Text style={styles.buttonText}>
+                {currentStep === 3 ? 'Başlayalım' : 'Devam Et'}
+              </Text>
+              <ChevronRight color="#FFF" size={20} />
+            </TouchableOpacity>
+          </Animated.View>
+        )}
       </View>
     </View>
   );
