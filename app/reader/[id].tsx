@@ -253,9 +253,27 @@ export default function ReaderScreen() {
         const autoSpeed = Math.min(1.0 + (Math.floor(reps / 2) * 0.05), 1.5);
         setPlaybackSpeed(autoSpeed);
 
-        // 5. Ses dosyasını yükle (ZORUNLU OLARAK SENİN LOCAL MP3'ÜNÜ KULLANACAK)
+        // 5. Kaldığı Yerden Devam Et Kontrolü
+        const { data: lastSession } = await supabase
+          .from('reading_sessions')
+          .select('sentences_read')
+          .eq('user_id', curUserId)
+          .eq('article_id', data.article.id)
+          .eq('completed', false)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        let startSentenceIndex = 0;
+        if (lastSession && lastSession.sentences_read > 0) {
+          // Okunan cümle sayısının bir eksiği (index) kaldığımız yerdir
+          startSentenceIndex = Math.max(0, lastSession.sentences_read - 1);
+          setActiveSentenceIndex(startSentenceIndex);
+        }
+
+        // 6. Ses dosyasını yükle
         const localAudio = require('../../assets/audio/remote_work.mp3');
-        await loadAudio(localAudio, autoSpeed, data.sentences);
+        await loadAudio(localAudio, autoSpeed, data.sentences, startSentenceIndex);
       } catch (e) {
         console.error('Veri yükleme hatası:', e);
         setReaderError('Makale yuklenemedi. Baglantini kontrol edip tekrar dene.');
@@ -267,7 +285,7 @@ export default function ReaderScreen() {
     fetchData();
   }, [id]);
 
-  const loadAudio = async (source: any, speed: number, currentSentences: ArticleSentence[]) => {
+  const loadAudio = async (source: any, speed: number, currentSentences: ArticleSentence[], startSentenceIndex: number = 0) => {
     try {
       await Audio.setAudioModeAsync({
         staysActiveInBackground: true,
@@ -338,6 +356,13 @@ export default function ReaderScreen() {
           }
         }
       });
+
+      // Eğer başlangıç cümlesi varsa oraya seek yap
+      if (startSentenceIndex > 0 && workingSentences[startSentenceIndex]) {
+        const startMs = workingSentences[startSentenceIndex].start_ms || 0;
+        await sound.setPositionAsync(startMs);
+        setAudioProgress((startMs / (initialStatus.durationMillis || 1)) * 100);
+      }
     } catch (e) {
       console.log('Audio load error:', e);
     }

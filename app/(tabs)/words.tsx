@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Pressable, ActivityIndicator } from 'react-native';
-import { BlurView } from 'expo-blur';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Archive, Repeat, Landmark, Sparkles, Trophy, ChevronRight, Search, X, Zap } from 'lucide-react-native';
+import { Archive, Repeat, Landmark, Sparkles, ChevronRight, Search, X, Zap, CheckCircle2, Clock3 } from 'lucide-react-native';
 import { Colors, Typography, Spacing, Shadows } from '../../constants/theme';
 import { LinearGradient } from 'expo-linear-gradient';
 import { FloatingNav } from '../../components/Home/FloatingNav';
+import { userService } from '../../services/userService';
+import { supabase } from '../../lib/supabase';
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 
 // --- DESIGN CONSTANTS (Editorial Light Theme) ---
 const Theme = {
@@ -20,9 +21,6 @@ const Theme = {
   textSecondary: Colors.text.secondary,
   cyan: '#2DE2E6',
 };
-
-import { userService } from '../../services/userService';
-import { supabase } from '../../lib/supabase';
 
 type TabType = 'vault' | 'srs' | 'museum';
 
@@ -74,43 +72,16 @@ export default function WordsScreen() {
       
       <SafeAreaView style={styles.safeArea}>
         {/* --- HEADER --- */}
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.headerTitle}>KELİMELER</Text>
-            <Text style={styles.headerSubtitle}>Koleksiyonun büyüyor</Text>
-          </View>
-          <TouchableOpacity style={styles.searchButton}>
-            <Search size={22} color={Theme.textPrimary} />
-          </TouchableOpacity>
-        </View>
+        <WordsHeader />
 
         {/* --- CUSTOM SEGMENTED CONTROL --- */}
-        <View style={styles.tabBar}>
-          <TabButton 
-            title="Hazine" 
-            icon={<Archive size={18} color={activeTab === 'vault' ? Theme.accent : Theme.textSecondary} />}
-            isActive={activeTab === 'vault'} 
-            onPress={() => setActiveTab('vault')} 
-          />
-          <TabButton 
-            title="Tekrar" 
-            icon={<Repeat size={18} color={activeTab === 'srs' ? Theme.accent : Theme.textSecondary} />}
-            isActive={activeTab === 'srs'} 
-            onPress={() => setActiveTab('srs')} 
-          />
-          <TabButton 
-            title="Müze" 
-            icon={<Landmark size={18} color={activeTab === 'museum' ? Theme.accent : Theme.textSecondary} />}
-            isActive={activeTab === 'museum'} 
-            onPress={() => setActiveTab('museum')} 
-          />
-        </View>
+        <WordsTabs activeTab={activeTab} setActiveTab={setActiveTab} />
 
         <ScrollView 
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
         >
-          {activeTab === 'vault' && <VaultTab words={userWords} loading={loading} />}
+          {activeTab === 'vault' && <VaultTabPolished words={userWords} loading={loading} />}
           {activeTab === 'srs' && <SRSTab onStart={() => setIsSRSRunning(true)} />}
           {activeTab === 'museum' && <MuseumTab />}
         </ScrollView>
@@ -123,6 +94,42 @@ export default function WordsScreen() {
 
 // --- SUB-TABS ---
 
+const WordsHeader = () => (
+  <View style={styles.header}>
+    <View>
+      <Text style={styles.headerTitle}>Kelimeler</Text>
+      <Text style={styles.headerSubtitle}>Koleksiyonun büyüyor</Text>
+    </View>
+    <TouchableOpacity style={styles.searchButton}>
+      <Search size={22} color={Theme.textPrimary} />
+    </TouchableOpacity>
+  </View>
+);
+
+const WordsTabs = ({ activeTab, setActiveTab }: { activeTab: TabType, setActiveTab: (tab: TabType) => void }) => (
+  <View style={styles.tabBar}>
+    <TabButton
+      title="Hazine"
+      icon={<Archive size={18} color={activeTab === 'vault' ? Theme.accent : Theme.textSecondary} />}
+      isActive={activeTab === 'vault'}
+      onPress={() => setActiveTab('vault')}
+    />
+    <TabButton
+      title="Tekrar"
+      icon={<Repeat size={18} color={activeTab === 'srs' ? Theme.accent : Theme.textSecondary} />}
+      isActive={activeTab === 'srs'}
+      onPress={() => setActiveTab('srs')}
+    />
+    <TabButton
+      title="Müze"
+      icon={<Landmark size={18} color={activeTab === 'museum' ? Theme.accent : Theme.textSecondary} />}
+      isActive={activeTab === 'museum'}
+      onPress={() => setActiveTab('museum')}
+    />
+  </View>
+);
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const VaultTab = ({ words, loading }: { words: any[], loading: boolean }) => {
   if (loading) {
     return (
@@ -166,6 +173,88 @@ const VaultTab = ({ words, loading }: { words: any[], loading: boolean }) => {
             mastery: item.status === 'known' ? 100 : (item.status === 'learning' ? 50 : 10),
             rarity: item.dictionary?.cefr_level || 'B1',
           }} 
+        />
+      ))}
+    </View>
+  );
+};
+
+const VaultTabPolished = ({ words, loading }: { words: any[], loading: boolean }) => {
+  if (loading) {
+    return (
+      <View style={styles.loadingState}>
+        <ActivityIndicator color={Theme.accent} />
+        <Text style={styles.loadingText}>Kelimeler hazırlanıyor</Text>
+      </View>
+    );
+  }
+
+  if (words.length === 0) {
+    return (
+      <View style={styles.tabContent}>
+        <View style={styles.emptyState}>
+          <View style={styles.emptyIcon}>
+            <Archive size={28} color={Theme.accent} />
+          </View>
+          <Text style={styles.emptyTitle}>Henüz kelime yok</Text>
+          <Text style={styles.emptyText}>
+            Okuma sırasında bilmediğin kelimelere dokun. Burada anlamları, seviyeleri ve öğrenme durumlarıyla birikir.
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  const masteredCount = words.filter(w => w.status === 'known').length;
+  const learningCount = words.filter(w => w.status === 'learning').length;
+
+  return (
+    <View style={styles.tabContent}>
+      <LinearGradient
+        colors={['#FFFFFF', '#F7F3FF']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.vaultHero}
+      >
+        <View style={styles.vaultHeroIcon}>
+          <Sparkles size={18} color={Theme.accent} />
+        </View>
+        <View style={styles.vaultHeroCopy}>
+          <Text style={styles.vaultHeroKicker}>Kelime Hazinesi</Text>
+          <Text style={styles.vaultHeroTitle}>{words.length} kelimelik kişisel arşiv</Text>
+          <Text style={styles.vaultHeroText}>Zayıf kelimeler öne çıkar, bildiklerin daha sakin görünür.</Text>
+        </View>
+      </LinearGradient>
+
+      <View style={styles.statsRow}>
+        <View style={styles.statCard}>
+          <Text style={styles.statValue}>{words.length}</Text>
+          <Text style={styles.statLabel}>Keşfedilen</Text>
+        </View>
+        <View style={styles.statCard}>
+          <Text style={styles.statValue}>{learningCount}</Text>
+          <Text style={styles.statLabel}>Çalışılan</Text>
+        </View>
+        <View style={styles.statCard}>
+          <Text style={styles.statValue}>{masteredCount}</Text>
+          <Text style={styles.statLabel}>Bilinen</Text>
+        </View>
+      </View>
+
+      <View style={styles.wordListHeader}>
+        <Text style={styles.wordListTitle}>Kayıtlı kelimeler</Text>
+        <Text style={styles.wordListCount}>{words.length}</Text>
+      </View>
+
+      {words.map((item, index) => (
+        <WordCardPolished
+          key={`${item.word}-${index}`}
+          item={{
+            word: item.word,
+            meaning: item.dictionary?.definition_tr || 'Tanım yükleniyor...',
+            mastery: item.status === 'known' ? 100 : (item.status === 'learning' ? 50 : 10),
+            rarity: item.dictionary?.cefr_level || 'B1',
+          }}
         />
       ))}
     </View>
@@ -295,6 +384,64 @@ const TabButton = ({ title, icon, isActive, onPress }: { title: string, icon: an
   </TouchableOpacity>
 );
 
+const WordCardPolished = ({ item }: { item: any }) => {
+  const isMastered = item.mastery === 100;
+  const isLearning = item.mastery >= 50 && item.mastery < 100;
+  const masteryLabel = isMastered ? 'Biliniyor' : isLearning ? 'Tekrarda' : 'Yeni';
+  const masteryIcon = isMastered ? (
+    <CheckCircle2 size={14} color={Colors.tag.green.text} />
+  ) : (
+    <Clock3 size={14} color={isLearning ? Theme.accent : Colors.tag.amber.text} />
+  );
+
+  return (
+    <TouchableOpacity activeOpacity={0.84} style={styles.wordCardPolished}>
+      <View style={styles.cardHeader}>
+        <View style={styles.wordInfo}>
+          <View style={styles.wordTitleRow}>
+            <Text style={styles.wordTitlePolished} numberOfLines={1}>{item.word}</Text>
+            <View style={[styles.levelBadge, item.rarity === 'A1' || item.rarity === 'A2' ? styles.levelBadgeEasy : styles.levelBadgeMid]}>
+              <Text style={styles.levelText}>{item.rarity}</Text>
+            </View>
+          </View>
+          <Text style={styles.wordMeaningPolished} numberOfLines={2}>{item.meaning}</Text>
+        </View>
+        <View style={[styles.masteryPill, isMastered && styles.masteryPillDone, isLearning && styles.masteryPillLearning]}>
+          {masteryIcon}
+          <Text style={[styles.masteryPillText, isMastered && styles.masteryPillTextDone, isLearning && styles.masteryPillTextLearning]}>
+            {masteryLabel}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.progressHeader}>
+        <Text style={styles.progressLabel}>Öğrenme seviyesi</Text>
+        <Text style={styles.progressValue}>{item.mastery}%</Text>
+      </View>
+
+      <View style={styles.cardFooter}>
+        <View style={styles.progressContainer}>
+          <View style={styles.progressBarBg}>
+            <View
+              style={[
+                styles.progressFill,
+                { width: `${item.mastery}%` },
+                isLearning && styles.progressFillLearning,
+                isMastered && styles.progressFillDone
+              ]}
+            />
+          </View>
+        </View>
+        <View style={styles.chevronCircle}>
+          <ChevronRight size={16} color={Theme.textSecondary} />
+        </View>
+      </View>
+
+      {isMastered && <View style={styles.masteredGlow} />}
+    </TouchableOpacity>
+  );
+};
+
 const WordCard = ({ item }: { item: any }) => {
   const isMastered = item.mastery === 100;
 
@@ -413,16 +560,104 @@ const styles = StyleSheet.create({
   tabContent: {
     flex: 1,
   },
+  loadingState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 92,
+    gap: 12,
+  },
+  loadingText: {
+    fontFamily: Typography.bodyMedium,
+    fontSize: 13,
+    color: Theme.textSecondary,
+  },
+  emptyState: {
+    alignItems: 'center',
+    backgroundColor: Theme.card,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: Theme.cardBorder,
+    paddingHorizontal: 28,
+    paddingVertical: 36,
+    marginTop: 20,
+    ...Shadows.subtle,
+  },
+  emptyIcon: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: 'rgba(91, 79, 240, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 18,
+  },
+  emptyTitle: {
+    fontFamily: Typography.header,
+    fontSize: 28,
+    color: Theme.textPrimary,
+  },
+  emptyText: {
+    fontFamily: Typography.body,
+    fontSize: 14,
+    color: Theme.textSecondary,
+    lineHeight: 22,
+    textAlign: 'center',
+    marginTop: 10,
+  },
+  vaultHero: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: Theme.cardBorder,
+    padding: 18,
+    marginBottom: 16,
+    overflow: 'hidden',
+    ...Shadows.subtle,
+  },
+  vaultHeroIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(91, 79, 240, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  vaultHeroCopy: {
+    flex: 1,
+  },
+  vaultHeroKicker: {
+    fontFamily: Typography.bodySemiBold,
+    fontSize: 10,
+    color: Theme.accent,
+    textTransform: 'uppercase',
+    letterSpacing: 1.2,
+    marginBottom: 4,
+  },
+  vaultHeroTitle: {
+    fontFamily: Typography.header,
+    fontSize: 24,
+    color: Theme.textPrimary,
+  },
+  vaultHeroText: {
+    fontFamily: Typography.body,
+    fontSize: 12,
+    color: Theme.textSecondary,
+    lineHeight: 18,
+    marginTop: 4,
+  },
   statsRow: {
     flexDirection: 'row',
-    gap: 16,
+    gap: 10,
     marginBottom: 24,
   },
   statCard: {
     flex: 1,
     backgroundColor: Theme.card,
-    borderRadius: 20,
-    padding: 16,
+    borderRadius: 18,
+    paddingVertical: 14,
+    paddingHorizontal: 10,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: Theme.cardBorder,
@@ -430,7 +665,7 @@ const styles = StyleSheet.create({
   },
   statValue: {
     fontFamily: Typography.header,
-    fontSize: 24,
+    fontSize: 23,
     color: Theme.accent,
   },
   statLabel: {
@@ -439,7 +674,133 @@ const styles = StyleSheet.create({
     color: Theme.textSecondary,
     marginTop: 4,
     textTransform: 'uppercase',
-    letterSpacing: 1,
+    letterSpacing: 0.7,
+    textAlign: 'center',
+  },
+  wordListHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  wordListTitle: {
+    fontFamily: Typography.bodySemiBold,
+    fontSize: 14,
+    color: Theme.textPrimary,
+  },
+  wordListCount: {
+    fontFamily: Typography.bodySemiBold,
+    fontSize: 12,
+    color: Theme.accent,
+    backgroundColor: 'rgba(91, 79, 240, 0.1)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  wordCardPolished: {
+    backgroundColor: Theme.card,
+    borderRadius: 22,
+    padding: 18,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: Theme.cardBorder,
+    overflow: 'hidden',
+    ...Shadows.subtle,
+  },
+  wordInfo: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  wordTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  wordTitlePolished: {
+    flexShrink: 1,
+    fontFamily: Typography.bodySemiBold,
+    fontSize: 19,
+    color: Theme.textPrimary,
+  },
+  wordMeaningPolished: {
+    fontFamily: Typography.body,
+    fontSize: 13,
+    color: Theme.textSecondary,
+    lineHeight: 19,
+    marginTop: 6,
+  },
+  levelBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  levelBadgeEasy: {
+    backgroundColor: Colors.tag.green.bg,
+  },
+  levelBadgeMid: {
+    backgroundColor: Colors.tag.indigo.bg,
+  },
+  levelText: {
+    fontFamily: Typography.bodySemiBold,
+    fontSize: 9,
+    color: Theme.accent,
+    letterSpacing: 0.7,
+  },
+  masteryPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: Colors.tag.amber.bg,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  masteryPillLearning: {
+    backgroundColor: Colors.tag.indigo.bg,
+  },
+  masteryPillDone: {
+    backgroundColor: Colors.tag.green.bg,
+  },
+  masteryPillText: {
+    fontFamily: Typography.bodySemiBold,
+    fontSize: 11,
+    color: Colors.tag.amber.text,
+  },
+  masteryPillTextLearning: {
+    color: Theme.accent,
+  },
+  masteryPillTextDone: {
+    color: Colors.tag.green.text,
+  },
+  progressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  progressLabel: {
+    fontFamily: Typography.bodyMedium,
+    fontSize: 11,
+    color: Theme.textSecondary,
+  },
+  progressValue: {
+    fontFamily: Typography.bodySemiBold,
+    fontSize: 11,
+    color: Theme.textPrimary,
+  },
+  progressFillLearning: {
+    backgroundColor: Theme.accent,
+  },
+  progressFillDone: {
+    backgroundColor: Colors.tag.green.text,
+  },
+  chevronCircle: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(30, 43, 74, 0.04)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   wordCard: {
     backgroundColor: Theme.card,

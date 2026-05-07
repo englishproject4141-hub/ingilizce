@@ -11,6 +11,7 @@ export default function TabLayout() {
         sceneStyle: { backgroundColor: Colors.background }
       }}>
       <Tabs.Screen name="index" />
+      <Tabs.Screen name="discover" />
       <Tabs.Screen name="words" />
     </Tabs>
   );

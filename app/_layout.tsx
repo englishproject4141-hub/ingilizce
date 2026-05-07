@@ -72,9 +72,12 @@ export default function RootLayout() {
     const firstSegment = segments[0];
     const inAuthGroup = firstSegment === '(auth)' || firstSegment === 'auth';
 
+    // Geliştirme aşamasında girişi atlamak için bu kontrolü geçici olarak kapatıyoruz
+    /*
     if (!hasSession && !inAuthGroup) {
       router.replace('/login');
     }
+    */
 
     if (hasSession && inAuthGroup) {
       router.replace('/(tabs)');

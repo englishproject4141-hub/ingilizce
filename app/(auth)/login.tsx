@@ -157,6 +157,14 @@ export default function LoginScreen() {
               <Text style={styles.secondaryButtonText}>Apple ile devam et</Text>
             </TouchableOpacity>
           )}
+
+          <TouchableOpacity
+            style={[styles.secondaryButton, { backgroundColor: 'transparent', borderWidth: 1, borderColor: Colors.border }]}
+            onPress={() => router.replace('/(tabs)')}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.secondaryButtonText, { color: Colors.text.secondary }]}>Girişi Atla (Geliştirici Modu)</Text>
+          </TouchableOpacity>
         </View>
 
         <Pressable style={styles.trustRow}>

@@ -18,6 +18,7 @@ export const FloatingNav = ({ activeTab }: { activeTab: string }) => {
 
   const handlePress = (id: string) => {
     if (id === 'home') router.push('/');
+    if (id === 'discover') router.push('/discover');
     if (id === 'review') router.push('/words');
     // Diğerleri için şimdilik boş
   };
