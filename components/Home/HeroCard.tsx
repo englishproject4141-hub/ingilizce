@@ -12,7 +12,7 @@ export const HeroCard = () => {
   const router = useRouter();
 
   const handlePress = () => {
-    router.push('/reader/text_001');
+    router.push({ pathname: '/reader/[id]', params: { id: 'text_001' } });
   };
 
   return (

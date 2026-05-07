@@ -1,8 +1,9 @@
-import React, { useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Animated, Dimensions } from 'react-native';
-import { Clock, BookOpen, Zap, Bookmark, ChevronRight, ThumbsDown, Minus, ThumbsUp } from 'lucide-react-native';
+import React, { useRef, useEffect, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Animated, Dimensions, ScrollView } from 'react-native';
+import { Clock, BookOpen, Zap, Bookmark, ChevronRight, ThumbsDown, Minus, ThumbsUp, Plus, Check } from 'lucide-react-native';
 import { Colors, Typography, Shadows } from '../../constants/theme';
 import * as Haptics from 'expo-haptics';
+import { DictionaryEntry } from '../../lib/database.types';
 
 const { width } = Dimensions.get('window');
 
@@ -14,6 +15,8 @@ interface Props {
   totalSentences: number;
   bookmarkedCount: number;
   wordsLookedUp: number;
+  suggestedWords?: DictionaryEntry[];
+  onAddSuggestedWords?: (words: string[]) => Promise<void> | void;
   onDifficultyFeedback: (level: 'easy' | 'right' | 'hard') => void;
   onContinue: () => void;
   onClose: () => void;
@@ -22,9 +25,11 @@ interface Props {
 export const SessionSummary = (props: Props) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(50)).current;
+  const [suggestionsAdded, setSuggestionsAdded] = useState(false);
 
   useEffect(() => {
     if (props.visible) {
+      setSuggestionsAdded(false);
       Animated.parallel([
         Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
         Animated.spring(slideAnim, { toValue: 0, useNativeDriver: true, tension: 60, friction: 12 }),
@@ -40,10 +45,18 @@ export const SessionSummary = (props: Props) => {
   const seconds = Math.floor((props.sessionDurationMs % 60000) / 1000);
   const timeStr = minutes > 0 ? `${minutes} dk ${seconds} sn` : `${seconds} sn`;
   const progressPercent = Math.round((props.sentencesRead / props.totalSentences) * 100);
+  const suggestedWords = props.suggestedWords || [];
 
   const handleDifficulty = (level: 'easy' | 'right' | 'hard') => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     props.onDifficultyFeedback(level);
+  };
+
+  const handleAddSuggestions = async () => {
+    if (suggestedWords.length === 0 || !props.onAddSuggestedWords) return;
+    await props.onAddSuggestedWords(suggestedWords.map(entry => entry.word));
+    setSuggestionsAdded(true);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
   return (
@@ -55,6 +68,7 @@ export const SessionSummary = (props: Props) => {
           <Text style={styles.subtitle}>Harika bir okuma seansı geçirdin!</Text>
         </View>
 
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.bodyContent}>
         <View style={styles.statsGrid}>
           <View style={styles.statCard}>
             <View style={[styles.statIcon, { backgroundColor: '#EEF2FF' }]}>
@@ -97,6 +111,35 @@ export const SessionSummary = (props: Props) => {
           <Text style={styles.progressDetail}>{props.sentencesRead} / {props.totalSentences} cümle okundu</Text>
         </View>
 
+        {suggestedWords.length > 0 && (
+          <View style={styles.suggestionSection}>
+            <Text style={styles.suggestionTitle}>Seans Hediyesi</Text>
+            <Text style={styles.suggestionSubtitle}>Makaleden secilen 3 kelime</Text>
+            <View style={styles.suggestionList}>
+              {suggestedWords.map(entry => (
+                <View key={entry.id} style={styles.suggestionPill}>
+                  <Text style={styles.suggestionWord}>{entry.word}</Text>
+                  <Text style={styles.suggestionMeaning} numberOfLines={1}>{entry.definition_tr}</Text>
+                </View>
+              ))}
+            </View>
+            <TouchableOpacity
+              style={[styles.suggestionButton, suggestionsAdded && styles.suggestionButtonAdded]}
+              onPress={handleAddSuggestions}
+              disabled={suggestionsAdded}
+            >
+              {suggestionsAdded ? (
+                <Check size={15} color={Colors.surface.white} />
+              ) : (
+                <Plus size={15} color={Colors.surface.white} />
+              )}
+              <Text style={styles.suggestionButtonText}>
+                {suggestionsAdded ? "Hazine'ye eklendi" : "Hazine'ye ekle"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         <View style={styles.difficultySection}>
           <Text style={styles.difficultyTitle}>Bu metin nasıldı?</Text>
           <Text style={styles.difficultySubtitle}>Geri bildirimin, sana daha uygun içerikler önermemize yardımcı olur.</Text>
@@ -120,6 +163,7 @@ export const SessionSummary = (props: Props) => {
           <Text style={styles.continueText}>Ana Sayfaya Dön</Text>
           <ChevronRight size={18} color={Colors.surface.white} />
         </TouchableOpacity>
+        </ScrollView>
       </Animated.View>
     </Animated.View>
   );
@@ -127,8 +171,9 @@ export const SessionSummary = (props: Props) => {
 
 const styles = StyleSheet.create({
   overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(30,43,74,0.5)', justifyContent: 'center', alignItems: 'center', zIndex: 200, padding: 24 },
-  container: { width: '100%', maxWidth: 380, backgroundColor: Colors.surface.white, borderRadius: 28, padding: 28, ...Shadows.medium },
+  container: { width: '100%', maxWidth: 380, maxHeight: '90%', backgroundColor: Colors.surface.white, borderRadius: 28, padding: 28, ...Shadows.medium },
   headerSection: { alignItems: 'center', marginBottom: 28 },
+  bodyContent: { paddingBottom: 2 },
   emoji: { fontSize: 48, marginBottom: 12 },
   title: { fontFamily: Typography.header, fontSize: 28, color: Colors.text.primary, marginBottom: 6 },
   subtitle: { fontFamily: Typography.body, fontSize: 14, color: Colors.text.secondary },
@@ -144,6 +189,16 @@ const styles = StyleSheet.create({
   progressTrack: { height: 6, backgroundColor: Colors.surface.iconCircle, borderRadius: 3, overflow: 'hidden', marginBottom: 8 },
   progressFill: { height: '100%', backgroundColor: Colors.accent.warmGold, borderRadius: 3 },
   progressDetail: { fontFamily: Typography.body, fontSize: 12, color: Colors.text.muted },
+  suggestionSection: { marginBottom: 24, backgroundColor: '#FFFBEB', padding: 14, borderRadius: 16, borderWidth: 1, borderColor: '#FDE68A' },
+  suggestionTitle: { fontFamily: Typography.bodySemiBold, fontSize: 14, color: Colors.text.primary, textAlign: 'center', marginBottom: 2 },
+  suggestionSubtitle: { fontFamily: Typography.body, fontSize: 11, color: Colors.text.muted, textAlign: 'center', marginBottom: 12 },
+  suggestionList: { gap: 8, marginBottom: 12 },
+  suggestionPill: { backgroundColor: Colors.surface.white, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9, borderWidth: 1, borderColor: '#FDE68A' },
+  suggestionWord: { fontFamily: Typography.bodySemiBold, fontSize: 13, color: Colors.text.primary, textTransform: 'uppercase', letterSpacing: 0.8 },
+  suggestionMeaning: { fontFamily: Typography.body, fontSize: 12, color: Colors.text.secondary, marginTop: 2 },
+  suggestionButton: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, backgroundColor: Colors.accent.warmGold, borderRadius: 12, paddingVertical: 11 },
+  suggestionButtonAdded: { backgroundColor: Colors.accent.green },
+  suggestionButtonText: { fontFamily: Typography.bodySemiBold, fontSize: 13, color: Colors.surface.white },
   difficultySection: { marginBottom: 24 },
   difficultyTitle: { fontFamily: Typography.bodySemiBold, fontSize: 15, color: Colors.text.primary, marginBottom: 4, textAlign: 'center' },
   difficultySubtitle: { fontFamily: Typography.body, fontSize: 12, color: Colors.text.muted, textAlign: 'center', marginBottom: 14, lineHeight: 18 },

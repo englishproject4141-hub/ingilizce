@@ -26,6 +26,19 @@ import { supabase } from '../../lib/supabase';
 
 type TabType = 'vault' | 'srs' | 'museum';
 
+const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error('Request timed out')), timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+};
+
 export default function WordsScreen() {
   const [activeTab, setActiveTab] = useState<TabType>('vault');
   const [isSRSRunning, setIsSRSRunning] = useState(false);
@@ -34,13 +47,18 @@ export default function WordsScreen() {
 
   useEffect(() => {
     const fetchUserWords = async () => {
-      setLoading(true);
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user?.id) {
-        const words = await userService.getUserWords(session.user.id);
-        setUserWords(words);
+      try {
+        setLoading(true);
+        const { data: { session } } = await withTimeout(supabase.auth.getSession(), 5000);
+        if (session?.user?.id) {
+          const words = await withTimeout(userService.getUserWords(session.user.id), 7000);
+          setUserWords(words);
+        }
+      } catch (e) {
+        console.error('fetchUserWords error:', e);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
 
     fetchUserWords();
@@ -231,7 +249,7 @@ const SRSSession = ({ onExit }: { onExit: () => void }) => {
             {showMeaning && (
               <View style={styles.meaningOverlayLight}>
                 <Text style={styles.meaningText}>output per unit effort</Text>
-                <Text style={styles.exampleText}>"The new tools significantly improved our productivity."</Text>
+                <Text style={styles.exampleText}>{'"'}The new tools significantly improved our productivity.{'"'}</Text>
               </View>
             )}
             
@@ -725,4 +743,3 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
 });
-

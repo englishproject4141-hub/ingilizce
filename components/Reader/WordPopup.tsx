@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Animated, ScrollView, ActivityIndicator,
 } from 'react-native';
-import { X, Volume2, Plus, BookOpen } from 'lucide-react-native';
+import { X, Volume2, Plus, BookOpen, Check } from 'lucide-react-native';
 import { Colors, Typography, Shadows } from '../../constants/theme';
 import * as Haptics from 'expo-haptics';
 import * as Speech from 'expo-speech';
@@ -12,10 +12,13 @@ import { DictionaryEntry } from '../../lib/database.types';
 interface WordPopupProps {
   word: string | null;
   onClose: () => void;
-  onAddToList?: (word: string) => void;
+  onAddToList?: (word: string) => Promise<void | boolean> | void;
+  onResolvedEntry?: (word: string, entry: DictionaryEntry) => void;
+  isSaved?: boolean;
+  isSaving?: boolean;
 }
 
-export const WordPopup = ({ word, onClose, onAddToList }: WordPopupProps) => {
+export const WordPopup = ({ word, onClose, onAddToList, onResolvedEntry, isSaved = false, isSaving = false }: WordPopupProps) => {
   const [entry, setEntry] = useState<DictionaryEntry | null>(null);
   const [loading, setLoading] = useState(false);
   const slideAnim = useRef(new Animated.Value(300)).current;
@@ -27,6 +30,9 @@ export const WordPopup = ({ word, onClose, onAddToList }: WordPopupProps) => {
         setLoading(true);
         const data = await articleService.getDictionaryEntry(word);
         setEntry(data);
+        if (data) {
+          onResolvedEntry?.(word, data);
+        }
         setLoading(false);
       };
       fetchEntry();
@@ -69,9 +75,9 @@ export const WordPopup = ({ word, onClose, onAddToList }: WordPopupProps) => {
     }
   };
 
-  const handleAddToList = () => {
+  const handleAddToList = async () => {
     if (word && onAddToList) {
-      onAddToList(word);
+      await onAddToList(word);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
   };
@@ -154,9 +160,19 @@ export const WordPopup = ({ word, onClose, onAddToList }: WordPopupProps) => {
               )}
 
               {/* ── Listeye Ekle Butonu */}
-              <TouchableOpacity style={styles.addButton} onPress={handleAddToList}>
-                <Plus size={16} color={Colors.surface.white} />
-                <Text style={styles.addButtonText}>Kelime Listeme Ekle</Text>
+              <TouchableOpacity
+                style={[styles.addButton, isSaved && styles.addButtonSaved]}
+                onPress={handleAddToList}
+                disabled={isSaved || isSaving}
+              >
+                {isSaved ? (
+                  <Check size={16} color={Colors.surface.white} />
+                ) : (
+                  <Plus size={16} color={Colors.surface.white} />
+                )}
+                <Text style={styles.addButtonText}>
+                  {isSaved ? "Hazine'de" : (isSaving ? 'Ekleniyor...' : 'Kelime Listeme Ekle')}
+                </Text>
               </TouchableOpacity>
             </>
           ) : (
@@ -165,7 +181,7 @@ export const WordPopup = ({ word, onClose, onAddToList }: WordPopupProps) => {
               <Text style={styles.notFoundEmoji}>📖</Text>
               <Text style={styles.notFoundTitle}>Kelime bulunamadı</Text>
               <Text style={styles.notFoundDesc}>
-                "{word}" kelimesi henüz sözlüğümüzde yok. Yakında eklenecek!
+                {`"${word}" kelimesi henüz sözlüğümüzde yok. Yakında eklenecek!`}
               </Text>
               <TouchableOpacity style={styles.speakFullBtn} onPress={handleSpeak}>
                 <Volume2 size={16} color={Colors.accent.indigo} />
@@ -332,6 +348,9 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     marginTop: 8,
     marginBottom: 20,
+  },
+  addButtonSaved: {
+    backgroundColor: Colors.accent.green,
   },
   addButtonText: {
     fontFamily: Typography.bodySemiBold,

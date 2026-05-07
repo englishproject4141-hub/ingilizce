@@ -35,7 +35,7 @@ export const RecommendationCards = () => {
   const router = useRouter();
   
   const handlePress = (id: string) => {
-    router.push(`/reader/${id}`);
+    router.push({ pathname: '/reader/[id]', params: { id } });
   };
 
   const cards = [

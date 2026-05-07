@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   SafeAreaView, Dimensions, FlatList,
@@ -20,27 +20,43 @@ import { ReaderSkeleton } from '../../components/Reader/ReaderSkeleton';
 import { articleService } from '../../services/articleService';
 import { userService } from '../../services/userService';
 import { supabase } from '../../lib/supabase';
-import { Article, ArticleSentence } from '../../lib/database.types';
+import { Article, ArticleSentence, DictionaryEntry } from '../../lib/database.types';
+import { extractImportantWordsFromSentences, normalizeVocabularyWord } from '../../services/vocabularyUtils';
 
 const { width, height } = Dimensions.get('window');
+
+const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error('Request timed out')), timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+};
 
 // ── DOKUNULABILIR KELİME BİLEŞENİ ──────────────────────────
 const TappableWord = ({
   word,
   onPress,
+  isCandidate,
 }: {
   word: string;
   onPress: (word: string) => void;
+  isCandidate?: boolean;
 }) => {
-  const cleanWord = word.replace(/[^a-zA-Z'-]/g, '');
+  const cleanWord = normalizeVocabularyWord(word);
 
   return (
     <Text
-      style={styles.wordToken}
+      style={[styles.wordToken, isCandidate && styles.candidateWordToken]}
       onPress={() => {
         if (cleanWord.length > 0) {
           Haptics.selectionAsync();
-          onPress(cleanWord.toLowerCase());
+          onPress(cleanWord);
         }
       }}
     >
@@ -56,6 +72,7 @@ export default function ReaderScreen() {
 
   // ── State
   const [loading, setLoading] = useState(true);
+  const [readerError, setReaderError] = useState<string | null>(null);
   const [article, setArticle] = useState<Article | null>(null);
   const [sentences, setSentences] = useState<ArticleSentence[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
@@ -71,14 +88,44 @@ export default function ReaderScreen() {
   const [showTranslation, setShowTranslation] = useState(false);
   const [wordsLookedUp, setWordsLookedUp] = useState(0);
   const [showSessionSummary, setShowSessionSummary] = useState(false);
+  const [savedWords, setSavedWords] = useState<Set<string>>(new Set());
+  const [savingWords, setSavingWords] = useState<Set<string>>(new Set());
+  const [sessionSuggestions, setSessionSuggestions] = useState<DictionaryEntry[]>([]);
 
   const soundRef = useRef<Audio.Sound | null>(null);
   const flatListRef = useRef<FlatList>(null);
   const scrollViewRef = useRef<ScrollView>(null);
   const sentenceLayouts = useRef<{ [key: number]: number }>({});
   const lookedUpWordsRef = useRef<Set<string>>(new Set());
+  const savedWordsRef = useRef<Set<string>>(new Set());
+  const savingWordsRef = useRef<Set<string>>(new Set());
   const isDraggingSlider = useRef(false);
   const totalAudioDuration = useRef(0);
+
+  const importantWordCandidates = useMemo(
+    () => extractImportantWordsFromSentences(sentences.map(sentence => sentence.text_en), 32),
+    [sentences]
+  );
+  const importantWordCandidateSet = useMemo(
+    () => new Set(importantWordCandidates),
+    [importantWordCandidates]
+  );
+
+  const syncSavedWords = useCallback((words: Set<string>) => {
+    savedWordsRef.current = words;
+    setSavedWords(new Set(words));
+  }, []);
+
+  const markWordSaving = useCallback((word: string, isSavingWord: boolean) => {
+    const next = new Set(savingWordsRef.current);
+    if (isSavingWord) {
+      next.add(word);
+    } else {
+      next.delete(word);
+    }
+    savingWordsRef.current = next;
+    setSavingWords(new Set(next));
+  }, []);
 
   // ── CUSTOM SMOOTH SCROLL ─────────────────────────────────
   const currentScrollY = useRef(0);
@@ -115,6 +162,22 @@ export default function ReaderScreen() {
     scrollAnimationRef.current = requestAnimationFrame(animate);
   };
 
+  const loadSessionSuggestions = useCallback(async () => {
+    if (!userId || importantWordCandidates.length === 0) {
+      setSessionSuggestions([]);
+      return;
+    }
+
+    const locallyUnsaved = importantWordCandidates.filter(word => !savedWordsRef.current.has(word));
+    const suggestions = await userService.getUnsavedDictionaryEntries(userId, locallyUnsaved, 3);
+    setSessionSuggestions(suggestions);
+  }, [importantWordCandidates, userId]);
+
+  const openSessionSummary = useCallback(() => {
+    setShowSessionSummary(true);
+    void loadSessionSuggestions();
+  }, [loadSessionSuggestions]);
+
   // ── AUTO-SCROLL (Living Text Mode) ─────────────────────────
   useEffect(() => {
     if (viewMode === 'reading' && sentences.length > 0) {
@@ -133,9 +196,10 @@ export default function ReaderScreen() {
     const fetchData = async () => {
       try {
         setLoading(true);
+        setReaderError(null);
 
         // 1. Kullanıcı oturumunu al
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session } } = await withTimeout(supabase.auth.getSession(), 4000);
         const curUserId = session?.user?.id || '00000000-0000-0000-0000-000000000000';
         setUserId(curUserId);
 
@@ -149,10 +213,11 @@ export default function ReaderScreen() {
         
         console.log('Veritabanında Aranan ID/Slug:', targetId);
 
-        const data = await articleService.getFullArticle(targetId);
+        const data = await withTimeout(articleService.getFullArticle(targetId), 10000);
         
         if (!data || !data.article) {
           console.error('HATA: Makale Supabase\'den dönmedi!');
+          setReaderError('Makale yuklenemedi. Baglantini kontrol edip tekrar dene.');
           return;
         }
 
@@ -165,6 +230,7 @@ export default function ReaderScreen() {
 
         setArticle(data.article);
         setSentences(data.sentences);
+        setLoading(false);
 
         // 3. Mevcut bookmark'ları çek
         const { data: bookmarks } = await supabase
@@ -180,6 +246,9 @@ export default function ReaderScreen() {
         }
 
         // 4. Dinamik Hız Ayarı (Bölüm 2.2)
+        const existingUserWords = await userService.getUserWords(curUserId);
+        syncSavedWords(new Set(existingUserWords.map(item => normalizeVocabularyWord(item.word))));
+
         const reps = await articleService.getRepetitionCount(curUserId, data.article.id);
         const autoSpeed = Math.min(1.0 + (Math.floor(reps / 2) * 0.05), 1.5);
         setPlaybackSpeed(autoSpeed);
@@ -189,6 +258,7 @@ export default function ReaderScreen() {
         await loadAudio(localAudio, autoSpeed, data.sentences);
       } catch (e) {
         console.error('Veri yükleme hatası:', e);
+        setReaderError('Makale yuklenemedi. Baglantini kontrol edip tekrar dene.');
       } finally {
         // Shimmer etkisini hissetmek için kısa bir gecikme
         setTimeout(() => setLoading(false), 800);
@@ -241,7 +311,7 @@ export default function ReaderScreen() {
           if (status.didJustFinish) {
             setIsPlaying(false);
             setAudioProgress(100);
-            setShowSessionSummary(true);
+            openSessionSummary();
           } else if (status.isPlaying) {
             const currentTime = status.positionMillis;
             if (!isDraggingSlider.current && status.durationMillis) {
@@ -387,20 +457,58 @@ export default function ReaderScreen() {
 
   // ── KELIME DOKUNMA ────────────────────────────────────────
   const handleWordPress = (word: string) => {
-    if (!lookedUpWordsRef.current.has(word)) {
-      lookedUpWordsRef.current.add(word);
+    const normalizedWord = normalizeVocabularyWord(word);
+    if (!normalizedWord) return;
+
+    if (!lookedUpWordsRef.current.has(normalizedWord)) {
+      lookedUpWordsRef.current.add(normalizedWord);
       setWordsLookedUp(prev => prev + 1);
     }
-    setSelectedWord(word === selectedWord ? null : word);
+    setSelectedWord(normalizedWord === selectedWord ? null : normalizedWord);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
   const handleAddWord = async (word: string) => {
-    if (!userId) return;
+    if (!userId) return false;
+    const normalizedWord = normalizeVocabularyWord(word);
+    if (!normalizedWord || savedWordsRef.current.has(normalizedWord) || savingWordsRef.current.has(normalizedWord)) {
+      return false;
+    }
+
     try {
-      await userService.saveWord(userId, word, article?.id);
+      markWordSaving(normalizedWord, true);
+      await userService.saveWord(userId, normalizedWord, article?.id);
+      const next = new Set(savedWordsRef.current);
+      next.add(normalizedWord);
+      syncSavedWords(next);
+      return true;
     } catch (e) {
       console.error('Word save error:', e);
+      return false;
+    } finally {
+      markWordSaving(normalizedWord, false);
+    }
+  };
+
+  const handleResolvedEntry = async (word: string, entry: DictionaryEntry) => {
+    if (!entry) return;
+    await handleAddWord(word);
+  };
+
+  const handleAddSuggestedWords = async (words: string[]) => {
+    if (!userId || words.length === 0) return;
+
+    try {
+      await userService.saveWords(userId, words, article?.id);
+      const next = new Set(savedWordsRef.current);
+      words.forEach(word => {
+        const normalizedWord = normalizeVocabularyWord(word);
+        if (normalizedWord) next.add(normalizedWord);
+      });
+      syncSavedWords(next);
+      setSessionSuggestions([]);
+    } catch (e) {
+      console.error('Suggested words save error:', e);
     }
   };
 
@@ -495,6 +603,7 @@ export default function ReaderScreen() {
             <TappableWord
               key={`${sentence.id}-${wIdx}`}
               word={word}
+              isCandidate={importantWordCandidateSet.has(normalizeVocabularyWord(word))}
               onPress={(w) => {
                 handleWordPress(w);
                 seekToPosition(sentence.start_ms || 0);
@@ -553,8 +662,20 @@ export default function ReaderScreen() {
   };
 
   // ── LOADING / SKELETON ──────────────────────────────────
-  if (loading || !article) {
+  if (loading) {
     return <ReaderSkeleton />;
+  }
+
+  if (!article) {
+    return (
+      <View style={styles.errorContainer}>
+        <Text style={styles.errorTitle}>Makale acilamadi</Text>
+        <Text style={styles.errorText}>{readerError || 'Baglanti kurulamadı. Lutfen tekrar dene.'}</Text>
+        <TouchableOpacity style={styles.errorButton} onPress={() => router.back()}>
+          <Text style={styles.errorButtonText}>Geri Don</Text>
+        </TouchableOpacity>
+      </View>
+    );
   }
 
   // ── İLERLEME YÜZDE ───────────────────────────────────────
@@ -652,6 +773,9 @@ export default function ReaderScreen() {
           word={selectedWord}
           onClose={() => setSelectedWord(null)}
           onAddToList={handleAddWord}
+          onResolvedEntry={handleResolvedEntry}
+          isSaved={selectedWord ? savedWords.has(selectedWord) : false}
+          isSaving={selectedWord ? savingWords.has(selectedWord) : false}
         />
 
         <AudioPlayer
@@ -677,6 +801,8 @@ export default function ReaderScreen() {
           totalSentences={sentences.length}
           bookmarkedCount={bookmarkedSentences.size}
           wordsLookedUp={wordsLookedUp}
+          suggestedWords={sessionSuggestions}
+          onAddSuggestedWords={handleAddSuggestedWords}
           onDifficultyFeedback={handleDifficultyFeedback}
           onContinue={handleSessionContinue}
           onClose={() => setShowSessionSummary(false)}
@@ -697,6 +823,38 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 32,
+    backgroundColor: Colors.background,
+  },
+  errorTitle: {
+    fontFamily: Typography.header,
+    fontSize: 28,
+    color: Colors.text.primary,
+    marginBottom: 10,
+  },
+  errorText: {
+    fontFamily: Typography.body,
+    fontSize: 14,
+    lineHeight: 22,
+    color: Colors.text.secondary,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  errorButton: {
+    paddingHorizontal: 22,
+    paddingVertical: 12,
+    borderRadius: 16,
+    backgroundColor: Colors.text.primary,
+  },
+  errorButtonText: {
+    fontFamily: Typography.bodySemiBold,
+    fontSize: 14,
+    color: Colors.surface.white,
   },
   // Header
   header: {
@@ -803,6 +961,10 @@ const styles = StyleSheet.create({
   },
   wordToken: {
     // Each word is individually tappable
+  },
+  candidateWordToken: {
+    backgroundColor: 'rgba(250, 204, 21, 0.28)',
+    borderRadius: 4,
   },
   // Çift Dil Çeviri Stilleri
   translationBlock: {

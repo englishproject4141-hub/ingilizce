@@ -8,24 +8,28 @@ interface StepIndicatorProps {
   currentStep: number;
 }
 
+const StepDot = ({ isActive }: { isActive: boolean }) => {
+  const animatedStyle = useAnimatedStyle(() => {
+    return {
+      width: withSpring(isActive ? 28 : 8, { damping: 15 }),
+      backgroundColor: isActive ? Colors.text.primary : Colors.text.muted,
+      opacity: isActive ? 1 : 0.3,
+    };
+  });
+
+  return <Animated.View style={[styles.dot, animatedStyle]} />;
+};
+
 export const StepIndicator: React.FC<StepIndicatorProps> = ({ totalSteps, currentStep }) => {
   return (
     <View style={styles.container}>
       {Array.from({ length: totalSteps }).map((_, index) => {
         const isActive = index === currentStep;
-        
-        const animatedStyle = useAnimatedStyle(() => {
-          return {
-            width: withSpring(isActive ? 28 : 8, { damping: 15 }),
-            backgroundColor: isActive ? Colors.text.primary : Colors.text.muted,
-            opacity: isActive ? 1 : 0.3,
-          };
-        });
 
         return (
-          <Animated.View
+          <StepDot
             key={index}
-            style={[styles.dot, animatedStyle]}
+            isActive={isActive}
           />
         );
       })}
