@@ -3,10 +3,11 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   SafeAreaView, Dimensions, FlatList,
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, useNavigation } from 'expo-router';
 import {
   ChevronDown, Maximize2, Minimize2, Languages, Check,
 } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Spacing, Typography, Shadows } from '../../constants/theme';
 import { StatusBar } from 'expo-status-bar';
 import { Audio } from 'expo-av';
@@ -20,8 +21,9 @@ import { ReaderSkeleton } from '../../components/Reader/ReaderSkeleton';
 import { articleService } from '../../services/articleService';
 import { userService } from '../../services/userService';
 import { supabase } from '../../lib/supabase';
-import { Article, ArticleSentence, DictionaryEntry } from '../../lib/database.types';
+import { Article, ArticleSentence, ArticleWord, DictionaryEntry } from '../../lib/database.types';
 import { extractImportantWordsFromSentences, normalizeVocabularyWord } from '../../services/vocabularyUtils';
+import { useAudioStore } from '../../store/useAudioStore';
 
 const { width, height } = Dimensions.get('window');
 
@@ -67,8 +69,9 @@ const TappableWord = ({
 
 // ── ANA EKRAN ──────────────────────────────────────────────
 export default function ReaderScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, resuming } = useLocalSearchParams<{ id: string; resuming?: string }>();
   const router = useRouter();
+  const navigation = useNavigation();
 
   // ── State
   const [loading, setLoading] = useState(true);
@@ -77,12 +80,12 @@ export default function ReaderScreen() {
   const [sentences, setSentences] = useState<ArticleSentence[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
 
-  const [isPlaying, setIsPlaying] = useState(false);
   const [audioProgress, setAudioProgress] = useState(0);
   const [viewMode, setViewMode] = useState<'reading' | 'focus'>('reading');
   const [activeSentenceIndex, setActiveSentenceIndex] = useState(0);
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
   const [selectedWord, setSelectedWord] = useState<string | null>(null);
+  const [selectedWordEntry, setSelectedWordEntry] = useState<any | null>(null);
   const [bookmarkedSentences, setBookmarkedSentences] = useState<Set<number>>(new Set());
   const [sessionStartTime] = useState(Date.now());
   const [showTranslation, setShowTranslation] = useState(false);
@@ -91,8 +94,9 @@ export default function ReaderScreen() {
   const [savedWords, setSavedWords] = useState<Set<string>>(new Set());
   const [savingWords, setSavingWords] = useState<Set<string>>(new Set());
   const [sessionSuggestions, setSessionSuggestions] = useState<DictionaryEntry[]>([]);
+  const [activeWordIndex, setActiveWordIndex] = useState<number | null>(null);
+  const [currentWords, setCurrentWords] = useState<ArticleWord[]>([]);
 
-  const soundRef = useRef<Audio.Sound | null>(null);
   const flatListRef = useRef<FlatList>(null);
   const scrollViewRef = useRef<ScrollView>(null);
   const sentenceLayouts = useRef<{ [key: number]: number }>({});
@@ -101,6 +105,24 @@ export default function ReaderScreen() {
   const savingWordsRef = useRef<Set<string>>(new Set());
   const isDraggingSlider = useRef(false);
   const totalAudioDuration = useRef(0);
+  const wordsBySentence = useRef<{ [key: number]: ArticleWord[] }>({});
+  const lastGlobalUpdate = useRef(0);
+  const insets = useSafeAreaInsets(); // Telefonun çentiğine göre otomatik boşluk
+
+  // ── Global Audio Store
+  const { 
+    currentArticle: globalArticle,
+    sound: globalSound, 
+    isPlaying: globalIsPlaying,
+    positionMillis: globalPositionMillis,
+    setSound, 
+    setArticle: setGlobalArticle,
+    setIsPlaying: setGlobalIsPlaying,
+    setPlaybackStatus,
+    togglePlayback: globalTogglePlayback,
+  } = useAudioStore();
+
+  // Screen visibility sync (Removed: handled by pathname in MiniPlayer)
 
   const importantWordCandidates = useMemo(
     () => extractImportantWordsFromSentences(sentences.map(sentence => sentence.text_en), 32),
@@ -191,12 +213,109 @@ export default function ReaderScreen() {
     }
   }, [activeSentenceIndex, viewMode, sentences]);
 
-  // ── VERİ ÇEKME (SUPABASE) ────────────────────────────────
+  // ── VERİ ÇEKME (SUPABASE) ────────────────────────────
   useEffect(() => {
+    // MiniPlayer'dan geri dönülmüşse ve ses zaten yüklüyse
+    // Makale verisini DB'den çek ama SESİ yeniden yükleme!
+    if (resuming === 'true' && globalSound && globalArticle) {
+      const resumeFromMiniPlayer = async () => {
+        try {
+          setLoading(true);
+          const { data: { session } } = await supabase.auth.getSession();
+          setUserId(session?.user?.id || null);
+
+          // Makale verisini çek (metin + cümleler)
+          const targetId = globalArticle.slug || globalArticle.id;
+          const data = await articleService.getFullArticle(targetId);
+          if (data) {
+            setArticle(data.article);
+            setSentences(data.sentences);
+            
+            const words = await articleService.getArticleWords(data.article.id);
+            const groupedWords: { [key: number]: any[] } = {};
+            words.forEach(w => {
+              if (!groupedWords[w.sentence_index]) groupedWords[w.sentence_index] = [];
+              groupedWords[w.sentence_index].push(w);
+            });
+            wordsBySentence.current = groupedWords;
+            setCurrentWords(words);
+
+            // Mevcut ses pozisyonundan aktif cümleyi bul
+            const currentPos = globalPositionMillis;
+            for (let i = 0; i < data.sentences.length; i++) {
+              const start = data.sentences[i].start_ms || 0;
+              const nextStart = i + 1 < data.sentences.length
+                ? (data.sentences[i + 1].start_ms || Number.MAX_SAFE_INTEGER)
+                : Number.MAX_SAFE_INTEGER;
+              if (currentPos >= start && currentPos < nextStart) {
+                setActiveSentenceIndex(data.sentences[i].sentence_index);
+                break;
+              }
+            }
+
+            // Ses süresini güncelle
+            const status = await globalSound.getStatusAsync();
+            if (status.isLoaded && status.durationMillis) {
+              totalAudioDuration.current = status.durationMillis;
+              setAudioProgress((currentPos / status.durationMillis) * 100);
+            }
+
+            // Karaoke callback'ini yeni sentence referanslarıyla yeniden bağla
+            const resumeSentences = data.sentences;
+            globalSound.setOnPlaybackStatusUpdate((st: any) => {
+              if (st.isLoaded) {
+                if (st.didJustFinish) {
+                  setGlobalIsPlaying(false);
+                  setAudioProgress(100);
+                  openSessionSummary();
+                } else if (st.isPlaying) {
+                  const ct = st.positionMillis;
+                  if (!isDraggingSlider.current && st.durationMillis) {
+                    setAudioProgress((ct / st.durationMillis) * 100);
+                  }
+                  let newIdx = -1;
+                  for (let i = 0; i < resumeSentences.length; i++) {
+                    const s = resumeSentences[i].start_ms || 0;
+                    const ns = i + 1 < resumeSentences.length
+                      ? (resumeSentences[i + 1].start_ms || Number.MAX_SAFE_INTEGER)
+                      : Number.MAX_SAFE_INTEGER;
+                    if (ct >= s && ct < ns) { newIdx = resumeSentences[i].sentence_index; break; }
+                  }
+                  if (newIdx !== -1 && !isDraggingSlider.current) {
+                    setActiveSentenceIndex(prev => prev !== newIdx ? newIdx : prev);
+                  }
+                  const now = Date.now();
+                  if (now - lastGlobalUpdate.current > 500) {
+                    setPlaybackStatus(ct, st.durationMillis || 0);
+                    setGlobalIsPlaying(st.isPlaying);
+                    lastGlobalUpdate.current = now;
+                  }
+                }
+              }
+            });
+          }
+        } catch (e) {
+          console.error('Resume hatası:', e);
+        } finally {
+          setLoading(false);
+        }
+      };
+      resumeFromMiniPlayer();
+      return;
+    }
+
     const fetchData = async () => {
       try {
         setLoading(true);
         setReaderError(null);
+
+        // ── SIFIRLAMA (Her yeni yüklemede temiz sayfa aç) ──
+        setSentences([]);
+        setCurrentWords([]);
+        wordsBySentence.current = {};
+        setActiveSentenceIndex(0);
+        setActiveWordIndex(null);
+        setAudioProgress(0);
 
         // 1. Kullanıcı oturumunu al
         const { data: { session } } = await withTimeout(supabase.auth.getSession(), 4000);
@@ -208,8 +327,8 @@ export default function ReaderScreen() {
         console.log('Gelen Orijinal ID:', id);
         
         // Eğer ID gelmediyse, undefined ise, veya 'null' stringi ise fallback yap
-        const isInvalidId = !id || id === 'undefined' || id === 'null' || id === 'text_101';
-        const targetId = isInvalidId ? 'the-art-of-remote-work' : (id as string);
+        const isInvalidId = !id || id === 'undefined' || id === 'null' || id === 'text_101' || id === 'demo-1';
+        const targetId = isInvalidId ? 'natural-conversation' : (id as string);
         
         console.log('Veritabanında Aranan ID/Slug:', targetId);
 
@@ -222,14 +341,17 @@ export default function ReaderScreen() {
         }
 
         console.log('Makale Başarıyla Bulundu:', data.article.title);
+        setArticle(data.article);
+        setSentences(data.sentences);
+        
+        // Global store'a hemen bas (MiniPlayer bu değere bağlı)
+        setGlobalArticle(data.article);
         console.log('Çekilen Cümle Sayısı:', data.sentences?.length);
         if (data.sentences && data.sentences.length > 0) {
           console.log('İlk 3 cümlenin start_ms değerleri:', data.sentences.slice(0, 3).map(s => s.start_ms));
         }
         console.log('--- DEBUG END ---');
 
-        setArticle(data.article);
-        setSentences(data.sentences);
         setLoading(false);
 
         // 3. Mevcut bookmark'ları çek
@@ -265,15 +387,31 @@ export default function ReaderScreen() {
           .maybeSingle();
 
         let startSentenceIndex = 0;
-        if (lastSession && lastSession.sentences_read > 0) {
+        const sessionData = lastSession as { sentences_read: number } | null;
+        
+        if (sessionData && sessionData.sentences_read > 0) {
           // Okunan cümle sayısının bir eksiği (index) kaldığımız yerdir
-          startSentenceIndex = Math.max(0, lastSession.sentences_read - 1);
+          startSentenceIndex = Math.max(0, sessionData.sentences_read - 1);
           setActiveSentenceIndex(startSentenceIndex);
         }
 
-        // 6. Ses dosyasını yükle
-        const localAudio = require('../../assets/audio/remote_work.mp3');
-        await loadAudio(localAudio, autoSpeed, data.sentences, startSentenceIndex);
+        // 6. Ses dosyasını yükle (Dinamik: Supabase URL yoksa yerele dön)
+        const audioSource = data.article.audio_url 
+          ? data.article.audio_url 
+          : require('../../assets/audio/remote_work.mp3');
+
+        await loadAudio(audioSource, autoSpeed, data.sentences, startSentenceIndex, data.article);
+
+        const words = await articleService.getArticleWords(data.article.id);
+        
+        // ── KELİMELERİ HIZLI ERİŞİM İÇİN GRUPLA (Performans Artışı) ──
+        const groupedWords: { [key: number]: ArticleWord[] } = {};
+        words.forEach(w => {
+          if (!groupedWords[w.sentence_index]) groupedWords[w.sentence_index] = [];
+          groupedWords[w.sentence_index].push(w);
+        });
+        wordsBySentence.current = groupedWords;
+        setCurrentWords(words);
       } catch (e) {
         console.error('Veri yükleme hatası:', e);
         setReaderError('Makale yuklenemedi. Baglantini kontrol edip tekrar dene.');
@@ -285,19 +423,37 @@ export default function ReaderScreen() {
     fetchData();
   }, [id]);
 
-  const loadAudio = async (source: any, speed: number, currentSentences: ArticleSentence[], startSentenceIndex: number = 0) => {
+  const loadAudio = async (source: any, speed: number, currentSentences: ArticleSentence[], startSentenceIndex: number = 0, articleData?: Article) => {
     try {
       await Audio.setAudioModeAsync({
         staysActiveInBackground: true,
         playsInSilentModeIOS: true,
       });
 
+      // ── ÖNCEKİ SESİ TEMİZLE (Üst üste binmeyi önler) ──
+      if (globalSound) {
+        try {
+          await globalSound.unloadAsync();
+        } catch (e) {
+          console.log('Eski ses temizleme hatası (normal):', e);
+        }
+      }
+
       const audioSource = typeof source === 'string' ? { uri: source } : source;
       const { sound } = await Audio.Sound.createAsync(
         audioSource,
-        { shouldPlay: false, rate: speed, shouldCorrectPitch: true }
+        { 
+          shouldPlay: false, 
+          rate: speed, 
+          shouldCorrectPitch: true,
+          progressUpdateIntervalMillis: 100 // ÇOK ÖNEMLİ: Daha sık kontrol, daha akıcı karaoke!
+        }
       );
-      soundRef.current = sound;
+      
+      setSound(sound);
+      // articleData parametresini kullan — component state'i (article) henüz null olabilir
+      if (articleData) setGlobalArticle(articleData);
+      setGlobalIsPlaying(false);
 
       let workingSentences = currentSentences;
       const hasTimestamps = currentSentences.some(s => s.start_ms != null && s.start_ms > 0);
@@ -327,7 +483,7 @@ export default function ReaderScreen() {
           }
 
           if (status.didJustFinish) {
-            setIsPlaying(false);
+            setGlobalIsPlaying(false);
             setAudioProgress(100);
             openSessionSummary();
           } else if (status.isPlaying) {
@@ -350,8 +506,40 @@ export default function ReaderScreen() {
               }
             }
 
+            // Kelime Bazlı Takip (Ham Zamanlama - En Saf Hali)
+            let newActiveWordIndex = null;
+            const sentenceWords = wordsBySentence.current[newActiveIndex] || [];
+            
+            if (sentenceWords.length > 0) {
+              // Offset'i sıfıra çekiyoruz (Ham Whisper verisi çok hassastır)
+              const SYNC_OFFSET = 0; 
+              const adjustedTime = currentTime + SYNC_OFFSET;
+
+              for (let i = 0; i < sentenceWords.length; i++) {
+                const word = sentenceWords[i];
+                // Kelimenin tam aralığında mıyız?
+                if (adjustedTime >= (word.start_ms || 0) && adjustedTime <= (word.end_ms || Number.MAX_SAFE_INTEGER)) {
+                  newActiveWordIndex = word.word_index;
+                  break;
+                }
+              }
+            }
+
+            if (newActiveWordIndex !== null && newActiveWordIndex !== activeWordIndex) {
+              setActiveWordIndex(newActiveWordIndex);
+            }
+
             if (newActiveIndex !== -1 && !isDraggingSlider.current) {
               setActiveSentenceIndex((prev) => (prev !== newActiveIndex ? newActiveIndex : prev));
+            }
+
+            // ── TRAFİK KONTROLÜ (Performans İçin) ──
+            const now = Date.now();
+            if (now - lastGlobalUpdate.current > 500 || status.didJustFinish) {
+              setAudioProgress((currentTime / (status.durationMillis || 1)) * 100);
+              setPlaybackStatus(currentTime, status.durationMillis || 0);
+              setGlobalIsPlaying(status.isPlaying);
+              lastGlobalUpdate.current = now;
             }
           }
         }
@@ -361,7 +549,9 @@ export default function ReaderScreen() {
       if (startSentenceIndex > 0 && workingSentences[startSentenceIndex]) {
         const startMs = workingSentences[startSentenceIndex].start_ms || 0;
         await sound.setPositionAsync(startMs);
-        setAudioProgress((startMs / (initialStatus.durationMillis || 1)) * 100);
+        if (initialStatus.isLoaded && initialStatus.durationMillis) {
+          setAudioProgress((startMs / initialStatus.durationMillis) * 100);
+        }
       }
     } catch (e) {
       console.log('Audio load error:', e);
@@ -370,11 +560,11 @@ export default function ReaderScreen() {
 
   // ── SES YÖNLENDİRME (SEEK) ──────────────────────────────
   const seekToPosition = async (positionMillis: number) => {
-    if (soundRef.current) {
-      await soundRef.current.setPositionAsync(positionMillis);
-      if (!isPlaying) {
-        await soundRef.current.playAsync();
-        setIsPlaying(true);
+    if (globalSound) {
+      await globalSound.setPositionAsync(positionMillis);
+      if (!globalIsPlaying) {
+        await globalSound.playAsync();
+        setGlobalIsPlaying(true);
       }
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
@@ -405,7 +595,7 @@ export default function ReaderScreen() {
 
   const handleSliderSeek = async (percentage: number) => {
     isDraggingSlider.current = false;
-    if (soundRef.current && totalAudioDuration.current > 0) {
+    if (globalSound && totalAudioDuration.current > 0) {
       const targetMillis = (percentage / 100) * totalAudioDuration.current;
       await seekToPosition(targetMillis);
     }
@@ -414,21 +604,15 @@ export default function ReaderScreen() {
 
   // ── SES KONTROL ──────────────────────────────────────────
   const togglePlayback = async () => {
-    if (!soundRef.current) return;
-    if (isPlaying) {
-      await soundRef.current.pauseAsync();
-    } else {
-      await soundRef.current.playAsync();
-    }
-    setIsPlaying(!isPlaying);
+    await globalTogglePlayback();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
   const skipForward = async () => {
-    if (!soundRef.current) return;
-    const status = await soundRef.current.getStatusAsync();
+    if (!globalSound) return;
+    const status = await globalSound.getStatusAsync();
     if (status.isLoaded) {
-      await soundRef.current.setPositionAsync(
+      await globalSound.setPositionAsync(
         Math.min(status.positionMillis + 15000, status.durationMillis || 0)
       );
     }
@@ -436,10 +620,10 @@ export default function ReaderScreen() {
   };
 
   const skipBackward = async () => {
-    if (!soundRef.current) return;
-    const status = await soundRef.current.getStatusAsync();
+    if (!globalSound) return;
+    const status = await globalSound.getStatusAsync();
     if (status.isLoaded) {
-      await soundRef.current.setPositionAsync(Math.max(status.positionMillis - 15000, 0));
+      await globalSound.setPositionAsync(Math.max(status.positionMillis - 15000, 0));
     }
     setActiveSentenceIndex(Math.max(0, activeSentenceIndex - 1));
   };
@@ -449,8 +633,8 @@ export default function ReaderScreen() {
     const currentIdx = speeds.indexOf(playbackSpeed);
     const nextSpeed = speeds[(currentIdx + 1) % speeds.length];
     setPlaybackSpeed(nextSpeed);
-    if (soundRef.current) {
-      await soundRef.current.setRateAsync(nextSpeed, true);
+    if (globalSound) {
+      await globalSound.setRateAsync(nextSpeed, true);
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
@@ -481,7 +665,7 @@ export default function ReaderScreen() {
   };
 
   // ── KELIME DOKUNMA ────────────────────────────────────────
-  const handleWordPress = (word: string) => {
+  const handleWordPress = (word: string, entry?: any) => {
     const normalizedWord = normalizeVocabularyWord(word);
     if (!normalizedWord) return;
 
@@ -489,7 +673,25 @@ export default function ReaderScreen() {
       lookedUpWordsRef.current.add(normalizedWord);
       setWordsLookedUp(prev => prev + 1);
     }
-    setSelectedWord(normalizedWord === selectedWord ? null : normalizedWord);
+    
+    if (normalizedWord === selectedWord) {
+      setSelectedWord(null);
+      setSelectedWordEntry(null);
+    } else {
+      setSelectedWord(normalizedWord);
+      // Eğer elimizde article_words'ten gelen data varsa onu dictionary formatına çevirip yolla
+      if (entry) {
+        setSelectedWordEntry({
+          word: normalizedWord,
+          ipa: entry.ipa,
+          definition_tr: entry.translation_tr,
+          cefr_level: entry.cefr_level,
+          pos: entry.pos || 'vocabulary'
+        });
+      } else {
+        setSelectedWordEntry(null);
+      }
+    }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
@@ -516,8 +718,8 @@ export default function ReaderScreen() {
   };
 
   const handleResolvedEntry = async (word: string, entry: DictionaryEntry) => {
-    if (!entry) return;
-    await handleAddWord(word);
+    // Sadece çözümlenen datayı saklamak gerekirse burası kullanılabilir.
+    // Şimdilik otomatik kayıt işlemini kaldırıyoruz (Kullanıcı butona basmalı).
   };
 
   const handleAddSuggestedWords = async (words: string[]) => {
@@ -559,29 +761,103 @@ export default function ReaderScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
+  // ── REF'LER (cleanup için en güncel state'i yakala) ────────
+  const articleRef = useRef(article);
+  const userIdRef = useRef(userId);
+  const activeSentenceRef = useRef(activeSentenceIndex);
+  const sentencesRef = useRef(sentences);
+  const wordsLookedUpRef = useRef(wordsLookedUp);
+  const playbackSpeedRef = useRef(playbackSpeed);
+  const sessionSavedRef = useRef(false);
+
+  useEffect(() => { articleRef.current = article; }, [article]);
+  useEffect(() => { userIdRef.current = userId; }, [userId]);
+  useEffect(() => { activeSentenceRef.current = activeSentenceIndex; }, [activeSentenceIndex]);
+  useEffect(() => { sentencesRef.current = sentences; }, [sentences]);
+  useEffect(() => { wordsLookedUpRef.current = wordsLookedUp; }, [wordsLookedUp]);
+  useEffect(() => { playbackSpeedRef.current = playbackSpeed; }, [playbackSpeed]);
+
+  // Seans sonlandığında (difficulty feedback verildiğinde) flag'i set et
+  const markSessionSaved = useCallback(() => {
+    sessionSavedRef.current = true;
+  }, []);
+
+  // ── OTOMATİK SEANS KAYDI (ekrandan çıkıldığında) ───────
+  const autoSaveSession = useCallback(() => {
+    if (sessionSavedRef.current) return; // Zaten kaydedildi
+    const art = articleRef.current;
+    const uid = userIdRef.current;
+    const sents = sentencesRef.current;
+    if (!art || !uid || sents.length === 0) return;
+
+    const durationSeconds = Math.floor((Date.now() - sessionStartTime) / 1000);
+    if (durationSeconds < 5) return; // 5 saniyeden kısa seansları kaydetme
+
+    const sentIdx = activeSentenceRef.current;
+    const isCompleted = (sentIdx + 1) >= sents.length;
+    const completionPercent = (sentIdx + 1) / Math.max(1, sents.length);
+    const isQualified = isCompleted || durationSeconds >= 180 || completionPercent >= 0.4;
+
+    sessionSavedRef.current = true;
+    articleService.saveReadingSession({
+      user_id: uid,
+      article_id: art.id,
+      started_at: new Date(sessionStartTime).toISOString(),
+      ended_at: new Date().toISOString(),
+      duration_seconds: durationSeconds,
+      reading_speed_wpm: Math.round(art.word_count / Math.max(1, (durationSeconds / 60))),
+      sentences_read: sentIdx + 1,
+      words_looked_up: wordsLookedUpRef.current,
+      difficulty_feedback: null,
+      playback_speed: playbackSpeedRef.current,
+      completed: isCompleted,
+      last_position_ms: sents[sentIdx]?.start_ms || 0,
+      qualified_for_streak: isQualified,
+    }).catch(e => console.error('Auto-save seans hatası:', e));
+  }, [sessionStartTime]);
+
+  // Ekrandan çıkış dinleyicisi (geri tuşu, swipe back, vs.)
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', () => {
+      autoSaveSession();
+    });
+    return () => {
+      unsubscribe();
+      autoSaveSession(); // Fallback: component unmount olursa
+    };
+  }, [navigation, autoSaveSession]);
+
   // ── SEANS SONU ────────────────────────────────────────────
   const handleEndSession = () => {
     setShowSessionSummary(true);
-    if (isPlaying && soundRef.current) {
-      soundRef.current.pauseAsync();
-      setIsPlaying(false);
+    if (globalIsPlaying && globalSound) {
+      globalSound.pauseAsync();
+      setGlobalIsPlaying(false);
     }
   };
 
   const handleDifficultyFeedback = (level: 'easy' | 'right' | 'hard') => {
     if (article && userId) {
+      sessionSavedRef.current = true; // Otomatik kayıtı engelle
+      const durationSeconds = Math.floor((Date.now() - sessionStartTime) / 1000);
+      const isCompleted = (activeSentenceIndex + 1) >= sentences.length;
+      const completionPercent = (activeSentenceIndex + 1) / Math.max(1, sentences.length);
+      const isQualified = isCompleted || durationSeconds >= 180 || completionPercent >= 0.4;
+
       articleService.saveReadingSession({
         user_id: userId,
         article_id: article.id,
         started_at: new Date(sessionStartTime).toISOString(),
-        ended_at: new Date().toISOString(), // Seansın bittiği anı ekliyoruz
-        duration_seconds: Math.floor((Date.now() - sessionStartTime) / 1000),
-        reading_speed_wpm: Math.round(article.word_count / ((Date.now() - sessionStartTime) / 60000)),
+        ended_at: new Date().toISOString(),
+        duration_seconds: durationSeconds,
+        reading_speed_wpm: Math.round(article.word_count / Math.max(1, (durationSeconds / 60))),
         sentences_read: activeSentenceIndex + 1,
         words_looked_up: wordsLookedUp,
         difficulty_feedback: level,
         playback_speed: playbackSpeed,
-        completed: (activeSentenceIndex + 1) >= sentences.length,
+        completed: isCompleted,
+        last_position_ms: sentences[activeSentenceIndex]?.start_ms || 0,
+        qualified_for_streak: isQualified,
       });
 
       // Seansı bitir ve geri dön
@@ -624,17 +900,30 @@ export default function ReaderScreen() {
         ]}
       >
         <Text style={[styles.bodyText, isActive && { fontSize: 18, color: '#1E293B' }]}>
-          {sentence.text_en.split(' ').map((word, wIdx) => (
-            <TappableWord
-              key={`${sentence.id}-${wIdx}`}
-              word={word}
-              isCandidate={importantWordCandidateSet.has(normalizeVocabularyWord(word))}
-              onPress={(w) => {
-                handleWordPress(w);
-                seekToPosition(sentence.start_ms || 0);
-              }}
-            />
-          ))}
+          {sentence.text_en.split(' ').map((word, wIdx) => {
+            const wordData = currentWords.find(w => w.sentence_index === index && w.word_index === wIdx);
+            const isWordActive = isActive && activeWordIndex === wIdx;
+
+            return (
+              <Text
+                key={`${sentence.id}-${wIdx}`}
+                style={[
+                  isWordActive && { color: Colors.accent.warmGold, fontWeight: '700' },
+                  wordData?.is_key && { borderBottomWidth: 2, borderBottomColor: '#F59E0B' } // Daha belirgin bir altın sarısı
+                ]}
+              >
+                <TappableWord
+                  word={word}
+                  isCandidate={wordData?.is_key || importantWordCandidateSet.has(normalizeVocabularyWord(word))}
+                  onPress={(w) => {
+                    handleWordPress(w, wordData);
+                    if (wordData) seekToPosition(wordData.start_ms || 0);
+                    else seekToPosition(sentence.start_ms || 0);
+                  }}
+                />
+              </Text>
+            );
+          })}
         </Text>
 
         {/* Çift Dil Çeviri */}
@@ -714,7 +1003,7 @@ export default function ReaderScreen() {
       <StatusBar style="dark" />
       <SafeAreaView style={styles.safeArea}>
         {/* ── HEADER ──────────────────────────────────── */}
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
           <TouchableOpacity style={styles.headerButton} onPress={() => router.back()}>
             <ChevronDown size={22} color={Colors.text.primary} strokeWidth={1.2} />
           </TouchableOpacity>
@@ -796,15 +1085,19 @@ export default function ReaderScreen() {
 
         <WordPopup
           word={selectedWord}
-          onClose={() => setSelectedWord(null)}
+          onClose={() => {
+            setSelectedWord(null);
+            setSelectedWordEntry(null);
+          }}
           onAddToList={handleAddWord}
           onResolvedEntry={handleResolvedEntry}
           isSaved={selectedWord ? savedWords.has(selectedWord) : false}
           isSaving={selectedWord ? savingWords.has(selectedWord) : false}
+          initialEntry={selectedWordEntry}
         />
 
         <AudioPlayer
-          isPlaying={isPlaying}
+          isPlaying={globalIsPlaying}
           playbackSpeed={playbackSpeed}
           progress={audioProgress}
           isBookmarked={isCurrentBookmarked}
@@ -884,11 +1177,11 @@ const styles = StyleSheet.create({
   // Header
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: 24,
-    height: 48,
-    zIndex: 10,
+    paddingBottom: 16,
+    backgroundColor: Colors.background,
   },
   headerButton: {
     width: 36,

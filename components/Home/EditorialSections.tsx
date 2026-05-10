@@ -17,6 +17,21 @@ import { useRouter } from 'expo-router';
 
 const { width } = Dimensions.get('window');
 
+// ── TYPES ──────────────────────────────────────────────────────────
+export interface HomeStats {
+  streakCount: number;
+  learnedWords: number;
+  monthlyNewWords: number;
+  currentLevel: string;
+  targetLevel: string;
+  journeyPercentage: number;
+}
+
+export interface DailyActivity {
+  date: string;
+  totalMinutes: number;
+}
+
 // --- SECTION HEADER ---
 const SectionHeader = ({ title, showAll = true }: { title: string, showAll?: boolean }) => (
   <View style={styles.sectionHeader}>
@@ -109,7 +124,7 @@ export const DailyFocus = () => {
         <View style={styles.focusHeader}>
           <View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Text style={styles.focusMainTitle}>Today’s focus</Text>
+              <Text style={styles.focusMainTitle}>Today's focus</Text>
               <Sparkles size={16} color={Colors.text.primary} opacity={0.6} />
             </View>
             <Text style={styles.focusSubtitle}>Business small talk</Text>
@@ -150,17 +165,33 @@ export const DailyFocus = () => {
   );
 };
 
-// --- PROGRESS GRID ---
-export const ProgressGrid = () => {
+// --- PROGRESS GRID (Gerçek Veri) ---
+export const ProgressGrid = ({ stats }: { stats: HomeStats | null }) => {
+  const s = stats || {
+    streakCount: 0,
+    learnedWords: 0,
+    monthlyNewWords: 0,
+    currentLevel: 'B1',
+    targetLevel: 'B2',
+    journeyPercentage: 0,
+  };
+
+  // Streak mesajı
+  const streakMsg = s.streakCount >= 30 ? 'Efsanevi!' 
+    : s.streakCount >= 14 ? 'Harika gidiyorsun!'
+    : s.streakCount >= 7 ? 'İyi gidiyorsun!'
+    : s.streakCount >= 3 ? 'Devam et!'
+    : s.streakCount > 0 ? 'Başladın bile!' : 'Bugün başla!';
+
   return (
     <View style={[styles.section, styles.statsRow]}>
       <View style={styles.smallStatCard}>
         <LinearGradient colors={['#FFFFFF', '#FDFBF9']} style={StyleSheet.absoluteFill} />
         <Flame size={18} color={Colors.chart.flame} fill={Colors.chart.flame} />
         <View style={styles.smallStatContent}>
-          <Text style={styles.smallStatValue}>23</Text>
+          <Text style={styles.smallStatValue}>{s.streakCount}</Text>
           <Text style={styles.smallStatLabel}>gün seri</Text>
-          <Text style={styles.smallStatSub}>Harika gidiyorsun!</Text>
+          <Text style={styles.smallStatSub}>{streakMsg}</Text>
         </View>
       </View>
 
@@ -168,19 +199,21 @@ export const ProgressGrid = () => {
         <LinearGradient colors={['#FFFFFF', '#FDFBF9']} style={StyleSheet.absoluteFill} />
         <BookOpen size={18} color={Colors.accent.indigo} />
         <View style={styles.smallStatContent}>
-          <Text style={styles.smallStatValue}>847</Text>
+          <Text style={styles.smallStatValue}>{s.learnedWords}</Text>
           <Text style={styles.smallStatLabel}>kelime öğrendin</Text>
-          <Text style={styles.smallStatSub}>Bu ay +247</Text>
+          <Text style={styles.smallStatSub}>Bu ay +{s.monthlyNewWords}</Text>
         </View>
       </View>
 
       <View style={styles.smallStatCard}>
         <LinearGradient colors={['#FFFFFF', '#FDFBF9']} style={StyleSheet.absoluteFill} />
         <View style={styles.smallStatContent}>
-          <Text style={[styles.smallStatValue, { color: Colors.accent.indigo }]}>B1 → B2</Text>
-          <Text style={styles.smallStatLabel}>34% ilerledi</Text>
+          <Text style={[styles.smallStatValue, { color: Colors.accent.indigo }]}>
+            {s.currentLevel} → {s.targetLevel}
+          </Text>
+          <Text style={styles.smallStatLabel}>{s.journeyPercentage}% ilerledi</Text>
           <View style={styles.miniProgressBar}>
-            <View style={[styles.miniProgressFill, { width: '34%' }]} />
+            <View style={[styles.miniProgressFill, { width: `${Math.min(s.journeyPercentage, 100)}%` }]} />
           </View>
         </View>
       </View>
@@ -188,23 +221,46 @@ export const ProgressGrid = () => {
   );
 };
 
-// --- ACTIVITY STRIP ---
-export const ActivityStrip = () => {
+// --- ACTIVITY STRIP (Gerçek Veri) ---
+export const ActivityStrip = ({ activities }: { activities: DailyActivity[] }) => {
+  // Son 14 günü oluştur
+  const last14Days = Array.from({ length: 14 }).map((_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (13 - i));
+    const dStr = d.toISOString().split('T')[0];
+    const match = activities.find(a => a.date === dStr);
+    return match ? match.totalMinutes : 0;
+  });
+
+  // Mutlak ölçek: 30 dk = tam yükseklik (35px)
+  // Tek seans olsa bile abartılı görünmez
+  const MAX_BAR_HEIGHT = 35;
+  const SCALE_TARGET = Math.max(30, ...last14Days); // En az 30 dk baseline
+
   return (
     <View style={styles.section}>
       <SectionHeader title="SON 14 GÜN" showAll={false} />
       <View style={styles.barsContainer}>
-        {Array.from({ length: 14 }).map((_, i) => (
-          <View key={i} style={styles.barWrapper}>
-            <View
-              style={[
-                styles.bar,
-                { height: Math.random() * 20 + 15 },
-                i === 13 ? styles.barCurrent : (Math.random() > 0.4 ? styles.barActive : styles.barMuted)
-              ]}
-            />
-          </View>
-        ))}
+        {last14Days.map((minutes, i) => {
+          // Mutlak ölçek: dakika / hedef * max yükseklik
+          const height = minutes > 0 
+            ? Math.max(Math.min((minutes / SCALE_TARGET) * MAX_BAR_HEIGHT, MAX_BAR_HEIGHT), 4) 
+            : 4;
+          const isCurrent = i === 13;
+          const isActive = minutes > 0;
+
+          return (
+            <View key={i} style={styles.barWrapper}>
+              <View
+                style={[
+                  styles.bar,
+                  { height },
+                  isCurrent ? styles.barCurrent : (isActive ? styles.barActive : styles.barMuted)
+                ]}
+              />
+            </View>
+          );
+        })}
       </View>
     </View>
   );
@@ -217,7 +273,7 @@ export const InspirationPanel = () => {
       <LinearGradient colors={['#FDFBF9', '#F9F7F5']} style={StyleSheet.absoluteFill} />
       <View style={{ flex: 1 }}>
         <Quote size={24} color={Colors.text.primary} style={{ marginBottom: 12, opacity: 0.8 }} />
-        <Text style={styles.quote}>“Her gün biraz daha iyi.”</Text>
+        <Text style={styles.quote}>"Her gün biraz daha iyi."</Text>
         <Text style={styles.quoteSub}>Küçük adımlar, büyük dönüşümler.</Text>
       </View>
       <View style={styles.graphContainer}>

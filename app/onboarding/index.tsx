@@ -5,7 +5,11 @@ import {
   StyleSheet, 
   TouchableOpacity, 
   BackHandler, 
-  Dimensions 
+  Dimensions,
+  ActivityIndicator,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
@@ -15,40 +19,116 @@ import Animated, {
   withTiming, 
   withSequence,
   withRepeat,
-  withSpring,
   ZoomIn,
+  FadeIn,
 } from 'react-native-reanimated';
 import { StepIndicator } from '../../components/Onboarding/StepIndicator';
-import PlacementTest from '../../components/Onboarding/PlacementTest';
-import { Check, ChevronRight } from 'lucide-react-native';
+import { Check, ChevronRight, GraduationCap, Target, User } from 'lucide-react-native';
 import { Colors, Spacing, Typography } from '../../constants/theme';
+import { userService } from '../../services/userService';
+import { supabase } from '../../lib/supabase';
 
 const { width } = Dimensions.get('window');
 
 const ONBOARDING_STEPS = [
-  { id: 'level', title: 'Seviye Testi', description: 'Dil seviyenizi belirleyelim.' },
+  { id: 'name', title: 'Seni Tanıyalım', description: 'Adını girelim.' },
+  { id: 'level', title: 'Seviye Seçimi', description: 'İngilizce seviyenizi belirleyelim.' },
   { id: 'interests', title: 'İlgi Alanları', description: 'Sevdiğiniz konuları seçin.' },
   { id: 'goals', title: 'Hedef Belirleme', description: 'Günlük hedefinizi koyun.' },
   { id: 'result', title: 'Sonuç', description: 'Hazırsınız!' },
 ];
 
+const LEVELS = [
+  { id: 'A1', label: 'A1 - Başlangıç', desc: 'Temel ifadeler ve basit cümleler.' },
+  { id: 'A2', label: 'A2 - Temel', desc: 'Günlük konular ve basit iletişim.' },
+  { id: 'B1', label: 'B1 - Orta', desc: 'Tanıdık konularda ana fikirleri anlama.' },
+  { id: 'B2', label: 'B2 - Üst Orta', desc: 'Karmaşık metinlerin ana fikirlerini anlama.' },
+  { id: 'C1', label: 'C1 - İleri', desc: 'Uzun ve zorlu metinleri anlama.' },
+];
+
+const GOALS = [
+  { id: 10, label: 'Hafif', desc: 'Günde 10 dakika' },
+  { id: 20, label: 'Düzenli', desc: 'Günde 20 dakika' },
+  { id: 30, label: 'Ciddi', desc: 'Günde 30 dakika' },
+  { id: 60, label: 'Yoğun', desc: 'Günde 60 dakika' },
+];
+
 export default function OnboardingScreen() {
   const [currentStep, setCurrentStep] = useState(0);
+  const [displayName, setDisplayName] = useState('');
   const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
-  const [userLevel, setUserLevel] = useState<string>('A1');
+  const [selectedLevel, setSelectedLevel] = useState('B1');
+  const [selectedGoal, setSelectedGoal] = useState(20);
+  const [isSaving, setIsSaving] = useState(false);
+  const [nameError, setNameError] = useState(false);
   const router = useRouter();
 
   const translateX = useSharedValue(0);
   const shakeTranslateX = useSharedValue(0);
 
+  // ── Geri tuşunu engelle
   useEffect(() => {
     const backAction = () => true;
     const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
     return () => backHandler.remove();
   }, []);
 
+  // ── Google Auth'tan isim pre-fill
+  useEffect(() => {
+    const prefill = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user?.user_metadata?.full_name) {
+          setDisplayName(user.user_metadata.full_name);
+        } else if (user?.user_metadata?.name) {
+          setDisplayName(user.user_metadata.name);
+        }
+      } catch (e) {
+        // Sessizce devam et — pre-fill opsiyonel
+      }
+    };
+    prefill();
+  }, []);
+
+  const getNextLevel = (level: string) => {
+    const order = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
+    const idx = order.indexOf(level);
+    return idx < order.length - 1 ? order[idx + 1] : order[idx];
+  };
+
+  const saveProfile = async () => {
+    try {
+      setIsSaving(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Kullanıcı bulunamadı');
+
+      await userService.updateUserProfile(user.id, {
+        display_name: displayName.trim(),
+        current_level: selectedLevel,
+        target_level: getNextLevel(selectedLevel),
+        interests: selectedInterests,
+        daily_goal_minutes: selectedGoal,
+      });
+
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      router.replace('/(tabs)');
+    } catch (e) {
+      console.error('Profil kaydedilemedi:', e);
+      setIsSaving(false);
+    }
+  };
+
   const nextStep = () => {
-    if (currentStep === 1 && selectedInterests.length === 0) {
+    // Adım 0: İsim kontrolü (en az 2 karakter)
+    if (currentStep === 0 && displayName.trim().length < 2) {
+      setNameError(true);
+      shake();
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      return;
+    }
+
+    // Adım 2: İlgi alanı kontrolü (en az 1)
+    if (currentStep === 2 && selectedInterests.length === 0) {
       shake();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return;
@@ -57,16 +137,10 @@ export default function OnboardingScreen() {
     if (currentStep < ONBOARDING_STEPS.length - 1) {
       translateX.value = withTiming(-(currentStep + 1) * width, { duration: 400 });
       setCurrentStep(prev => prev + 1);
+      setNameError(false);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-
-      if (currentStep === 2) {
-        setTimeout(() => {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          // Auto progress logic as per supplement.js
-        }, 1000);
-      }
     } else {
-      router.replace('/(tabs)');
+      saveProfile();
     }
   };
 
@@ -96,28 +170,87 @@ export default function OnboardingScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView 
+      style={styles.container} 
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <Stack.Screen options={{ headerShown: false }} />
       
       <View style={styles.header}>
-        <StepIndicator totalSteps={4} currentStep={currentStep} />
+        <StepIndicator totalSteps={5} currentStep={currentStep} />
       </View>
 
       <Animated.View style={[styles.stepsContainer, animatedContainerStyle]}>
-        {/* Step 1: Level Test */}
+        {/* Step 0: İsim Girişi */}
         <View style={styles.step}>
-          <PlacementTest onComplete={(level) => {
-            setUserLevel(level);
-            nextStep();
-          }} />
+          <Animated.View entering={FadeIn.delay(200)} style={styles.nameIconContainer}>
+            <User size={32} color={Colors.accent.warmGold} strokeWidth={1.5} />
+          </Animated.View>
+          <Text style={styles.title}>Seni Tanıyalım</Text>
+          <Text style={styles.description}>Sana nasıl hitap edelim?</Text>
+          
+          <View style={styles.nameInputWrapper}>
+            <TextInput
+              style={[
+                styles.nameInput,
+                nameError && styles.nameInputError,
+                displayName.length > 0 && styles.nameInputFilled,
+              ]}
+              placeholder="Adın ve soyadın"
+              placeholderTextColor={Colors.text.muted}
+              value={displayName}
+              onChangeText={(text) => {
+                setDisplayName(text);
+                if (text.trim().length >= 2) setNameError(false);
+              }}
+              autoCapitalize="words"
+              autoCorrect={false}
+              returnKeyType="next"
+              onSubmitEditing={nextStep}
+              maxLength={50}
+            />
+            {nameError && (
+              <Text style={styles.nameErrorText}>En az 2 karakter girin</Text>
+            )}
+          </View>
+        </View>
+
+        {/* Step 1: Level Selection */}
+        <View style={styles.step}>
+          <Text style={styles.title}>Seviyenizi Seçin</Text>
+          <Text style={styles.description}>Hangi seviyede olduğunuzu düşünüyorsunuz?</Text>
+          <View style={styles.optionsList}>
+            {LEVELS.map((item) => (
+              <TouchableOpacity 
+                key={item.id} 
+                style={[
+                  styles.optionItem,
+                  selectedLevel === item.id && styles.optionItemSelected
+                ]}
+                onPress={() => {
+                  setSelectedLevel(item.id);
+                  Haptics.selectionAsync();
+                }}
+              >
+                <View style={styles.optionIcon}>
+                  <GraduationCap size={20} color={selectedLevel === item.id ? Colors.accent.warmGold : Colors.text.muted} />
+                </View>
+                <View style={styles.optionContent}>
+                  <Text style={[styles.optionLabel, selectedLevel === item.id && styles.optionLabelSelected]}>{item.label}</Text>
+                  <Text style={styles.optionDesc}>{item.desc}</Text>
+                </View>
+                {selectedLevel === item.id && <Check size={20} color={Colors.accent.warmGold} />}
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
         {/* Step 2: Interests */}
         <View style={styles.step}>
-          <Text style={styles.title}>İlgi Alanlarınızı Seçin</Text>
+          <Text style={styles.title}>İlgi Alanlarınız</Text>
           <Text style={styles.description}>Size özel içerikler önermemiz için en az 1 konu seçin.</Text>
           <View style={styles.interestsGrid}>
-            {['Teknoloji', 'Spor', 'Müzik', 'Bilim', 'Sanat', 'Ekonomi'].map((item) => (
+            {['Teknoloji', 'Spor', 'Müzik', 'Bilim', 'Sanat', 'Ekonomi', 'Sinema', 'Seyahat', 'Mutfak', 'Kişisel Gelişim'].map((item) => (
               <TouchableOpacity 
                 key={item} 
                 style={[
@@ -138,9 +271,30 @@ export default function OnboardingScreen() {
         {/* Step 3: Goals */}
         <View style={styles.step}>
           <Text style={styles.title}>Günlük Hedef</Text>
-          <Text style={styles.description}>Günde kaç kelime öğrenmek istersiniz?</Text>
-          <View style={styles.placeholderCard}>
-            <Text style={styles.placeholderText}>[Hedef Seçici]</Text>
+          <Text style={styles.description}>Her gün ne kadar vakit ayırabilirsiniz?</Text>
+          <View style={styles.optionsList}>
+            {GOALS.map((item) => (
+              <TouchableOpacity 
+                key={item.id} 
+                style={[
+                  styles.optionItem,
+                  selectedGoal === item.id && styles.optionItemSelected
+                ]}
+                onPress={() => {
+                  setSelectedGoal(item.id);
+                  Haptics.selectionAsync();
+                }}
+              >
+                <View style={styles.optionIcon}>
+                  <Target size={20} color={selectedGoal === item.id ? Colors.accent.warmGold : Colors.text.muted} />
+                </View>
+                <View style={styles.optionContent}>
+                  <Text style={[styles.optionLabel, selectedGoal === item.id && styles.optionLabelSelected]}>{item.label}</Text>
+                  <Text style={styles.optionDesc}>{item.desc}</Text>
+                </View>
+                {selectedGoal === item.id && <Check size={20} color={Colors.accent.warmGold} />}
+              </TouchableOpacity>
+            ))}
           </View>
         </View>
 
@@ -150,34 +304,41 @@ export default function OnboardingScreen() {
             <Animated.View entering={ZoomIn.springify()} style={styles.successIcon}>
               <Check size={48} color={Colors.accent.green} strokeWidth={2.5} />
             </Animated.View>
-            <Text style={styles.title}>{userLevel} Seviyesindesin!</Text>
-            <Text style={styles.description}>Profilin hazırlandı. Harika bir yolculuğa hazır ol.</Text>
+            <Text style={styles.title}>Hoş geldin, {displayName.split(' ')[0]}!</Text>
+            <Text style={styles.description}>
+              {selectedLevel} seviyesine uygun içeriklerin hazırlandı.{'\n'}Günde {selectedGoal} dakika ile başlıyoruz.
+            </Text>
           </View>
         </View>
       </Animated.View>
 
       <View style={styles.footer}>
-        {currentStep === 1 && selectedInterests.length === 0 && (
+        {currentStep === 2 && selectedInterests.length === 0 && (
           <Text style={styles.errorText}>En az 1 konu seçin</Text>
         )}
-        {currentStep !== 0 && (
-          <Animated.View style={shakeStyle}>
-            <TouchableOpacity 
-              style={[
-                styles.button,
-                currentStep === 3 && { backgroundColor: Colors.text.primary }
-              ]} 
-              onPress={nextStep}
-            >
-              <Text style={styles.buttonText}>
-                {currentStep === 3 ? 'Başlayalım' : 'Devam Et'}
-              </Text>
-              <ChevronRight color="#FFF" size={20} />
-            </TouchableOpacity>
-          </Animated.View>
-        )}
+        <Animated.View style={shakeStyle}>
+          <TouchableOpacity 
+            style={[
+              styles.button,
+              currentStep === 4 && { backgroundColor: Colors.text.primary }
+            ]} 
+            onPress={nextStep}
+            disabled={isSaving}
+          >
+            {isSaving ? (
+              <ActivityIndicator color="#FFF" />
+            ) : (
+              <>
+                <Text style={styles.buttonText}>
+                  {currentStep === 4 ? 'Başlayalım' : 'Devam Et'}
+                </Text>
+                <ChevronRight color="#FFF" size={20} />
+              </>
+            )}
+          </TouchableOpacity>
+        </Animated.View>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -192,7 +353,7 @@ const styles = StyleSheet.create({
   },
   stepsContainer: {
     flexDirection: 'row',
-    width: width * 4,
+    width: width * 5,
     flex: 1,
   },
   step: {
@@ -214,32 +375,109 @@ const styles = StyleSheet.create({
     color: Colors.text.secondary,
     textAlign: 'center',
     lineHeight: 24,
-    marginBottom: 48,
+    marginBottom: 32,
   },
-  placeholderCard: {
-    width: '100%',
-    height: 240,
+
+  // ── NAME INPUT
+  nameIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     backgroundColor: Colors.secondarySurface,
-    borderRadius: Spacing.radius,
-    borderWidth: 1,
-    borderColor: Colors.border,
     justifyContent: 'center',
     alignItems: 'center',
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
-  placeholderText: {
-    fontFamily: Typography.bodyMedium,
+  nameInputWrapper: {
+    width: '100%',
+    paddingHorizontal: 8,
+  },
+  nameInput: {
+    fontFamily: Typography.bodySemiBold,
+    fontSize: 18,
+    color: Colors.text.primary,
+    textAlign: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    backgroundColor: Colors.cardBackground,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+  },
+  nameInputFilled: {
+    borderColor: Colors.accent.warmGold,
+    backgroundColor: '#FFFDF9',
+  },
+  nameInputError: {
+    borderColor: '#E57373',
+    backgroundColor: '#FFF5F5',
+  },
+  nameErrorText: {
+    fontFamily: Typography.body,
+    fontSize: 13,
+    color: '#E57373',
+    textAlign: 'center',
+    marginTop: 8,
+  },
+
+  // ── OPTIONS
+  optionsList: {
+    width: '100%',
+    gap: 12,
+  },
+  optionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: Colors.cardBackground,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    gap: 16,
+  },
+  optionItemSelected: {
+    borderColor: Colors.accent.warmGold,
+    backgroundColor: '#FFFDF9',
+  },
+  optionIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Colors.secondarySurface,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  optionContent: {
+    flex: 1,
+  },
+  optionLabel: {
+    fontFamily: Typography.bodySemiBold,
+    fontSize: 16,
+    color: Colors.text.primary,
+    marginBottom: 2,
+  },
+  optionLabelSelected: {
+    color: Colors.accent.warmGold,
+  },
+  optionDesc: {
+    fontFamily: Typography.body,
+    fontSize: 13,
     color: Colors.text.muted,
   },
   interestsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    gap: 10,
     justifyContent: 'center',
   },
   interestItem: {
-    paddingHorizontal: 24,
-    paddingVertical: 14,
-    borderRadius: 30,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 25,
     borderWidth: 1,
     borderColor: Colors.border,
     backgroundColor: Colors.cardBackground,
@@ -250,7 +488,7 @@ const styles = StyleSheet.create({
   },
   interestText: {
     fontFamily: Typography.bodyMedium,
-    fontSize: 15,
+    fontSize: 14,
     color: Colors.text.primary,
   },
   interestTextSelected: {

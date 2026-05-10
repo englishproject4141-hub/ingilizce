@@ -1,5 +1,5 @@
 import { supabase as rawSupabase } from '../lib/supabase';
-import type { Database, Article, ArticleSentence, DictionaryEntry } from '../lib/database.types';
+import type { Database, Article, ArticleSentence, ArticleWord, DictionaryEntry } from '../lib/database.types';
 import { SupabaseClient } from '@supabase/supabase-js';
 
 // En garanti tip eşleme yöntemi
@@ -118,4 +118,40 @@ export const articleService = {
       throw error;
     }
   },
+
+  /**
+   * Bir makaleye ait tüm kelime zamanlamalarını getirir
+   */
+  async getArticleWords(articleId: string): Promise<ArticleWord[]> {
+    const { data, error } = await supabase
+      .from('article_words')
+      .select('*')
+      .eq('article_id', articleId)
+      .order('word_index', { ascending: true });
+
+    if (error) {
+      console.error('Kelime çekme hatası:', error);
+      return [];
+    }
+    return data || [];
+  },
+
+  /**
+   * Belirli cümle aralığındaki kelimeleri getirir (Lazy Loading için)
+   */
+  async getArticleWordsBySentenceRange(articleId: string, startIdx: number, endIdx: number): Promise<ArticleWord[]> {
+    const { data, error } = await supabase
+      .from('article_words')
+      .select('*')
+      .eq('article_id', articleId)
+      .gte('sentence_index', startIdx)
+      .lte('sentence_index', endIdx)
+      .order('word_index', { ascending: true });
+
+    if (error) {
+      console.error('Aralıklı kelime çekme hatası:', error);
+      return [];
+    }
+    return data || [];
+  }
 };

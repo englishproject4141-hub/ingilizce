@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, Pressable, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Archive, Repeat, Landmark, Sparkles, ChevronRight, Search, X, Zap, CheckCircle2, Clock3 } from 'lucide-react-native';
@@ -7,6 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { FloatingNav } from '../../components/Home/FloatingNav';
 import { userService } from '../../services/userService';
 import { supabase } from '../../lib/supabase';
+import { useFocusEffect } from 'expo-router';
 
 const { width } = Dimensions.get('window');
 
@@ -41,26 +42,52 @@ export default function WordsScreen() {
   const [activeTab, setActiveTab] = useState<TabType>('vault');
   const [isSRSRunning, setIsSRSRunning] = useState(false);
   const [userWords, setUserWords] = useState<any[]>([]);
+  const [filteredWords, setFilteredWords] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchActive, setIsSearchActive] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'new' | 'learning' | 'known'>('all');
+
+  // Her sekmeye dönüldüğünde kelimeleri yeniden yükle
+  useFocusEffect(
+    useCallback(() => {
+      const fetchUserWords = async () => {
+        try {
+          setLoading(true);
+          const { data: { session } } = await withTimeout(supabase.auth.getSession(), 5000);
+          if (session?.user?.id) {
+            const words = await withTimeout(userService.getUserWords(session.user.id), 7000);
+            setUserWords(words);
+            setFilteredWords(words);
+          }
+        } catch (e) {
+          console.error('fetchUserWords error:', e);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      fetchUserWords();
+    }, [])
+  );
 
   useEffect(() => {
-    const fetchUserWords = async () => {
-      try {
-        setLoading(true);
-        const { data: { session } } = await withTimeout(supabase.auth.getSession(), 5000);
-        if (session?.user?.id) {
-          const words = await withTimeout(userService.getUserWords(session.user.id), 7000);
-          setUserWords(words);
-        }
-      } catch (e) {
-        console.error('fetchUserWords error:', e);
-      } finally {
-        setLoading(false);
-      }
-    };
+    let filtered = userWords;
 
-    fetchUserWords();
-  }, []);
+    if (searchQuery.trim() !== '') {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter(uw => 
+        uw.word.toLowerCase().includes(q) || 
+        (uw.dictionary?.definition_tr && uw.dictionary.definition_tr.toLowerCase().includes(q))
+      );
+    }
+
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(uw => uw.status === statusFilter);
+    }
+
+    setFilteredWords(filtered);
+  }, [searchQuery, userWords, statusFilter]);
 
   if (isSRSRunning) {
     return <SRSSession onExit={() => setIsSRSRunning(false)} />;
@@ -72,37 +99,87 @@ export default function WordsScreen() {
       
       <SafeAreaView style={styles.safeArea}>
         {/* --- HEADER --- */}
-        <WordsHeader />
+        <WordsHeader 
+          isSearchActive={isSearchActive} 
+          setIsSearchActive={setIsSearchActive}
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+        />
 
         {/* --- CUSTOM SEGMENTED CONTROL --- */}
-        <WordsTabs activeTab={activeTab} setActiveTab={setActiveTab} />
+        {!isSearchActive && <WordsTabs activeTab={activeTab} setActiveTab={setActiveTab} />}
 
         <ScrollView 
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
         >
-          {activeTab === 'vault' && <VaultTabPolished words={userWords} loading={loading} />}
+          {activeTab === 'vault' && (
+            <VaultTabPolished 
+              words={filteredWords}
+              allWords={userWords}
+              loading={loading} 
+              isSearching={isSearchActive} 
+              statusFilter={statusFilter}
+              setStatusFilter={setStatusFilter}
+            />
+          )}
           {activeTab === 'srs' && <SRSTab onStart={() => setIsSRSRunning(true)} />}
           {activeTab === 'museum' && <MuseumTab />}
         </ScrollView>
       </SafeAreaView>
 
-      <FloatingNav activeTab="review" />
     </View>
   );
 }
 
 // --- SUB-TABS ---
 
-const WordsHeader = () => (
+import { TextInput } from 'react-native';
+
+const WordsHeader = ({ 
+  isSearchActive, 
+  setIsSearchActive, 
+  searchQuery, 
+  setSearchQuery 
+}: { 
+  isSearchActive: boolean, 
+  setIsSearchActive: (val: boolean) => void,
+  searchQuery: string,
+  setSearchQuery: (val: string) => void
+}) => (
   <View style={styles.header}>
-    <View>
-      <Text style={styles.headerTitle}>Kelimeler</Text>
-      <Text style={styles.headerSubtitle}>Koleksiyonun büyüyor</Text>
-    </View>
-    <TouchableOpacity style={styles.searchButton}>
-      <Search size={22} color={Theme.textPrimary} />
-    </TouchableOpacity>
+    {isSearchActive ? (
+      <View style={styles.searchContainer}>
+        <Search size={20} color={Theme.accent} style={styles.searchIconInside} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Kelime veya anlam ara..."
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          autoFocus
+          placeholderTextColor={Theme.textSecondary}
+        />
+        <TouchableOpacity onPress={() => {
+          setIsSearchActive(false);
+          setSearchQuery('');
+        }}>
+          <X size={20} color={Theme.textSecondary} />
+        </TouchableOpacity>
+      </View>
+    ) : (
+      <>
+        <View>
+          <Text style={styles.headerTitle}>Kelimeler</Text>
+          <Text style={styles.headerSubtitle}>Koleksiyonun büyüyor</Text>
+        </View>
+        <TouchableOpacity 
+          style={styles.searchButton} 
+          onPress={() => setIsSearchActive(true)}
+        >
+          <Search size={22} color={Theme.textPrimary} />
+        </TouchableOpacity>
+      </>
+    )}
   </View>
 );
 
@@ -179,7 +256,21 @@ const VaultTab = ({ words, loading }: { words: any[], loading: boolean }) => {
   );
 };
 
-const VaultTabPolished = ({ words, loading }: { words: any[], loading: boolean }) => {
+const VaultTabPolished = ({ 
+  words, 
+  allWords,
+  loading, 
+  isSearching, 
+  statusFilter, 
+  setStatusFilter 
+}: { 
+  words: any[], 
+  allWords: any[],
+  loading: boolean, 
+  isSearching: boolean,
+  statusFilter: string,
+  setStatusFilter: (val: any) => void
+}) => {
   if (loading) {
     return (
       <View style={styles.loadingState}>
@@ -196,53 +287,94 @@ const VaultTabPolished = ({ words, loading }: { words: any[], loading: boolean }
           <View style={styles.emptyIcon}>
             <Archive size={28} color={Theme.accent} />
           </View>
-          <Text style={styles.emptyTitle}>Henüz kelime yok</Text>
+          <Text style={styles.emptyTitle}>{isSearching ? 'Sonuç bulunamadı' : 'Henüz kelime yok'}</Text>
           <Text style={styles.emptyText}>
-            Okuma sırasında bilmediğin kelimelere dokun. Burada anlamları, seviyeleri ve öğrenme durumlarıyla birikir.
+            {isSearching 
+              ? 'Aradığın kelimeyi bulamadık. Yazımını kontrol edebilirsin.'
+              : 'Okuma sırasında bilmediğin kelimelere dokun. Burada anlamları, seviyeleri ve öğrenme durumlarıyla birikir.'}
           </Text>
         </View>
       </View>
     );
   }
 
-  const masteredCount = words.filter(w => w.status === 'known').length;
-  const learningCount = words.filter(w => w.status === 'learning').length;
+  // İstatistikler HER ZAMAN tam koleksiyonu yansıtmalı, filtrelenmemiş veriyi kullan
+  const totalCount = allWords.length;
+  const newCount = allWords.filter(w => w.status === 'new').length;
+  const learningCount = allWords.filter(w => w.status === 'learning').length;
+  const masteredCount = allWords.filter(w => w.status === 'known').length;
 
   return (
     <View style={styles.tabContent}>
-      <LinearGradient
-        colors={['#FFFFFF', '#F7F3FF']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.vaultHero}
-      >
-        <View style={styles.vaultHeroIcon}>
-          <Sparkles size={18} color={Theme.accent} />
-        </View>
-        <View style={styles.vaultHeroCopy}>
-          <Text style={styles.vaultHeroKicker}>Kelime Hazinesi</Text>
-          <Text style={styles.vaultHeroTitle}>{words.length} kelimelik kişisel arşiv</Text>
-          <Text style={styles.vaultHeroText}>Zayıf kelimeler öne çıkar, bildiklerin daha sakin görünür.</Text>
-        </View>
-      </LinearGradient>
+      {!isSearching && (
+        <>
+          <LinearGradient
+            colors={['#FFFFFF', '#F7F3FF']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.vaultHero}
+          >
+            <View style={styles.vaultHeroIcon}>
+              <Sparkles size={18} color={Theme.accent} />
+            </View>
+            <View style={styles.vaultHeroCopy}>
+              <Text style={styles.vaultHeroKicker}>Kelime Hazinesi</Text>
+              <Text style={styles.vaultHeroTitle}>{totalCount} kelimelik kişisel arşiv</Text>
+              <Text style={styles.vaultHeroText}>Zayıf kelimeler öne çıkar, bildiklerin daha sakin görünür.</Text>
+            </View>
+          </LinearGradient>
 
-      <View style={styles.statsRow}>
-        <View style={styles.statCard}>
-          <Text style={styles.statValue}>{words.length}</Text>
-          <Text style={styles.statLabel}>Keşfedilen</Text>
+          <View style={styles.statsRow}>
+            <TouchableOpacity 
+              style={[styles.statCard, statusFilter === 'all' && styles.statCardActive]} 
+              onPress={() => setStatusFilter('all')}
+            >
+              <Text style={[styles.statValue, statusFilter === 'all' && styles.statValueActive]}>{totalCount}</Text>
+              <Text style={styles.statLabel}>Hepsi</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.statCard, statusFilter === 'new' && styles.statCardActive]} 
+              onPress={() => setStatusFilter('new')}
+            >
+              <Text style={[styles.statValue, statusFilter === 'new' && styles.statValueActive]}>{newCount}</Text>
+              <Text style={styles.statLabel}>Yeni</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.statCard, statusFilter === 'learning' && styles.statCardActive]} 
+              onPress={() => setStatusFilter('learning')}
+            >
+              <Text style={[styles.statValue, statusFilter === 'learning' && styles.statValueActive]}>{learningCount}</Text>
+              <Text style={styles.statLabel}>Çalışılan</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.statCard, statusFilter === 'known' && styles.statCardActive]} 
+              onPress={() => setStatusFilter('known')}
+            >
+              <Text style={[styles.statValue, statusFilter === 'known' && styles.statValueActive]}>{masteredCount}</Text>
+              <Text style={styles.statLabel}>Bilinen</Text>
+            </TouchableOpacity>
+          </View>
+        </>
+      )}
+
+      {isSearching && (
+        <View style={styles.filterChips}>
+          {['all', 'new', 'learning', 'known'].map((f) => (
+            <TouchableOpacity
+              key={f}
+              style={[styles.filterChip, statusFilter === f && styles.filterChipActive]}
+              onPress={() => setStatusFilter(f as any)}
+            >
+              <Text style={[styles.filterChipText, statusFilter === f && styles.filterChipTextActive]}>
+                {f === 'all' ? 'Hepsi' : f === 'new' ? 'Yeni' : f === 'learning' ? 'Çalışılan' : 'Bilinen'}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statValue}>{learningCount}</Text>
-          <Text style={styles.statLabel}>Çalışılan</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statValue}>{masteredCount}</Text>
-          <Text style={styles.statLabel}>Bilinen</Text>
-        </View>
-      </View>
+      )}
 
       <View style={styles.wordListHeader}>
-        <Text style={styles.wordListTitle}>Kayıtlı kelimeler</Text>
+        <Text style={styles.wordListTitle}>{isSearching ? 'Arama Sonuçları' : 'Kayıtlı kelimeler'}</Text>
         <Text style={styles.wordListCount}>{words.length}</Text>
       </View>
 
@@ -503,6 +635,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: Spacing.outer,
     paddingVertical: 20,
+    height: 100,
+  },
+  searchContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.03)',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    height: 50,
+    marginTop: 10,
+  },
+  searchIconInside: {
+    marginRight: 10,
+  },
+  searchInput: {
+    flex: 1,
+    fontFamily: Typography.bodyMedium,
+    fontSize: 15,
+    color: Theme.textPrimary,
+    paddingVertical: 10,
   },
   headerTitle: {
     fontFamily: Typography.header,
@@ -663,9 +816,42 @@ const styles = StyleSheet.create({
     borderColor: Theme.cardBorder,
     ...Shadows.subtle,
   },
+  statCardActive: {
+    borderColor: Theme.accent,
+    backgroundColor: 'rgba(91, 79, 240, 0.05)',
+  },
   statValue: {
     fontFamily: Typography.header,
     fontSize: 23,
+    color: Theme.accent,
+  },
+  statValueActive: {
+    color: Theme.accent,
+  },
+  filterChips: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 20,
+    flexWrap: 'wrap',
+  },
+  filterChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.03)',
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  filterChipActive: {
+    backgroundColor: 'rgba(91, 79, 240, 0.1)',
+    borderColor: 'rgba(91, 79, 240, 0.2)',
+  },
+  filterChipText: {
+    fontFamily: Typography.bodyMedium,
+    fontSize: 12,
+    color: Theme.textSecondary,
+  },
+  filterChipTextActive: {
     color: Theme.accent,
   },
   statLabel: {

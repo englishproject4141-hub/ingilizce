@@ -6,6 +6,7 @@ import { useFonts, InstrumentSerif_400Regular, InstrumentSerif_400Regular_Italic
 import { PlusJakartaSans_400Regular, PlusJakartaSans_500Medium, PlusJakartaSans_600SemiBold } from '@expo-google-fonts/plus-jakarta-sans';
 import { supabase } from '../lib/supabase';
 import 'react-native-reanimated';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 SplashScreen.preventAutoHideAsync().catch(() => {
   // Splash can already be hidden during fast refresh.
@@ -17,6 +18,7 @@ export default function RootLayout() {
   const [bootTimedOut, setBootTimedOut] = useState(false);
   const [authReady, setAuthReady] = useState(false);
   const [hasSession, setHasSession] = useState(false);
+  const [onboardingDone, setOnboardingDone] = useState<boolean | null>(null);
   const [loaded, error] = useFonts({
     InstrumentSerif_400Regular,
     InstrumentSerif_400Regular_Italic,
@@ -40,13 +42,30 @@ export default function RootLayout() {
     }, 3500);
 
     supabase.auth.getSession()
-      .then(({ data }) => {
+      .then(async ({ data }) => {
         if (!mounted) return;
-        setHasSession(Boolean(data.session));
+        const sessionExists = Boolean(data.session);
+        setHasSession(sessionExists);
+
+        // Onboarding kontrolü: profiles tablosunda display_name var mı?
+        if (sessionExists && data.session?.user?.id) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('display_name')
+            .eq('id', data.session.user.id)
+            .maybeSingle();
+          
+          if (mounted) {
+            setOnboardingDone(!!profile?.display_name && profile.display_name.trim().length > 0);
+          }
+        } else {
+          if (mounted) setOnboardingDone(null);
+        }
       })
       .catch(() => {
         if (!mounted) return;
         setHasSession(false);
+        setOnboardingDone(null);
       })
       .finally(() => {
         if (!mounted) return;
@@ -54,8 +73,21 @@ export default function RootLayout() {
         setAuthReady(true);
       });
 
-    const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: subscription } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setHasSession(Boolean(session));
+      
+      if (session?.user?.id) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('display_name')
+          .eq('id', session.user.id)
+          .maybeSingle();
+        
+        setOnboardingDone(!!profile?.display_name && profile.display_name.trim().length > 0);
+      } else {
+        setOnboardingDone(null);
+      }
+      
       setAuthReady(true);
     });
 
@@ -71,18 +103,26 @@ export default function RootLayout() {
 
     const firstSegment = segments[0];
     const inAuthGroup = firstSegment === '(auth)' || firstSegment === 'auth';
+    const inOnboarding = firstSegment === 'onboarding';
 
-    // Geliştirme aşamasında girişi atlamak için bu kontrolü geçici olarak kapatıyoruz
-    /*
+    // 1. Oturum yoksa → login'e yönlendir
     if (!hasSession && !inAuthGroup) {
-      router.replace('/login');
+      router.replace('/(auth)/login');
+      return;
     }
-    */
 
-    if (hasSession && inAuthGroup) {
-      router.replace('/(tabs)');
+    // 2. Oturum var ama onboarding yapılmamış → onboarding'e yönlendir
+    if (hasSession && onboardingDone === false && !inOnboarding) {
+      router.replace('/onboarding');
+      return;
     }
-  }, [authReady, bootTimedOut, error, hasSession, loaded, router, segments]);
+
+    // 3. Oturum var, onboarding tamam, ama hâlâ auth/onboarding ekranında → ana sayfaya yönlendir
+    if (hasSession && onboardingDone === true && (inAuthGroup || inOnboarding)) {
+      router.replace('/(tabs)');
+      return;
+    }
+  }, [authReady, bootTimedOut, error, hasSession, onboardingDone, loaded, router, segments]);
 
   useEffect(() => {
     if (loaded || error || bootTimedOut) {
@@ -97,22 +137,21 @@ export default function RootLayout() {
   }
 
   return (
-    <>
-      <Stack>
-        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-        <Stack.Screen name="auth/callback" options={{ headerShown: false }} />
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="onboarding/index" options={{ headerShown: false }} />
+    <SafeAreaProvider>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="(auth)" />
+        <Stack.Screen name="auth/callback" />
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="onboarding/index" />
         <Stack.Screen 
           name="reader/[id]" 
           options={{ 
-            headerShown: false,
             presentation: 'fullScreenModal',
             animation: 'slide_from_bottom'
           }} 
         />
       </Stack>
       <StatusBar style="dark" />
-    </>
+    </SafeAreaProvider>
   );
 }

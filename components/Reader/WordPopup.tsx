@@ -16,10 +16,11 @@ interface WordPopupProps {
   onResolvedEntry?: (word: string, entry: DictionaryEntry) => void;
   isSaved?: boolean;
   isSaving?: boolean;
+  initialEntry?: Partial<DictionaryEntry> | null;
 }
 
-export const WordPopup = ({ word, onClose, onAddToList, onResolvedEntry, isSaved = false, isSaving = false }: WordPopupProps) => {
-  const [entry, setEntry] = useState<DictionaryEntry | null>(null);
+export const WordPopup = ({ word, onClose, onAddToList, onResolvedEntry, isSaved = false, isSaving = false, initialEntry }: WordPopupProps) => {
+  const [entry, setEntry] = useState<DictionaryEntry | null>(initialEntry as DictionaryEntry || null);
   const [loading, setLoading] = useState(false);
   const slideAnim = useRef(new Animated.Value(300)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -27,12 +28,24 @@ export const WordPopup = ({ word, onClose, onAddToList, onResolvedEntry, isSaved
   useEffect(() => {
     if (word) {
       const fetchEntry = async () => {
-        setLoading(true);
-        const data = await articleService.getDictionaryEntry(word);
-        setEntry(data);
-        if (data) {
-          onResolvedEntry?.(word, data);
+        // Eğer elimizde zaten bir initialEntry varsa (Reader'dan gelen zenginleştirilmiş veri)
+        // loading göstermeden onu set edelim ama yine de DB'den güncelini kontrol edelim.
+        if (initialEntry) {
+          setEntry(initialEntry as DictionaryEntry);
+        } else {
+          setLoading(true);
         }
+
+        const data = await articleService.getDictionaryEntry(word);
+        
+        if (data) {
+          setEntry(data);
+          onResolvedEntry?.(word, data);
+        } else if (initialEntry) {
+          // DB'de yok ama elimizde zenginleştirilmiş veri varsa onu kullanmaya devam et
+          setEntry(initialEntry as DictionaryEntry);
+        }
+
         setLoading(false);
       };
       fetchEntry();

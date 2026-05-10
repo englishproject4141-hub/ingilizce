@@ -1,0 +1,62 @@
+Ran command: `node ADMIN_TOOLS/3-loader.js natural_conversation
+`
+
+Harika! "🎉 BAŞARILI!" yazısını gördüysen artık projenin kalbi olan **İçerik Hattı** (Content Pipeline) tamamen çalışıyor demektir. 
+
+İstediğin üzere, `ADMIN_TOOLS` klasörünün içine, senin için her zaman orada duracak, kapsamlı ve Türkçe bir **Kullanım Rehberi** (README.md) oluşturuyorum. Bu rehber sayesinde hangi dosyanın ne yaptığını ve işlemin başarılı olup olmadığını nasıl anlayacağını her zaman görebileceksin.
+
+[ARTIFACT: admin_tools_readme]
+{
+  "ArtifactType": "other",
+  "Summary": "ADMIN_TOOLS klasörü için detaylı kullanım kılavuzu ve pipeline aşamaları açıklaması."
+}
+
+# 🛠️ ADMIN_TOOLS: İçerik Yükleme Kılavuzu
+
+Bu klasör, ham bir ses dosyasını (`.mp3`) alıp, onu uygulamanın içinde etkileşimli, kelime bazlı karaoke yapılabilir bir derse dönüştüren **"İçerik Fabrikası"**dır.
+
+---
+
+## 🔑 Gereksinimler (.env Dosyası)
+Script'lerin çalışması için şu anahtarların `.env` dosyasında tanımlı olması şarttır:
+*   `GROQ_API_KEY`: Ses analizi ve AI zenginleştirme için (Groq'tan alınır).
+*   `SUPABASE_SERVICE_ROLE_KEY`: Veritabanına veri yazabilmek için (Supabase Dashboard'dan alınır).
+
+---
+
+## 🏃 Adım Adım Kullanım Sırası
+
+### 1. Adım: Ses Analizi (`1-process-audio.js`)
+Bu dosya ses dosyasını "dinler" ve her kelimenin ne zaman söylendiğini milisaniye bazında tespit eder.
+
+*   **Nasıl Kullanılır?**
+    `node ADMIN_TOOLS/1-process-audio.js dosya_adi.mp3`
+*   **Başarılı Olduğunu Nasıl Anlarım?**
+    Terminalde `✅ Groq Analizi tamamlandı!` yazar ve `assets/processed/` içinde `..._raw.json` dosyası oluşur.
+
+### 2. Adım: Yapay Zeka Zenginleştirme (`2-enrich-nlp.js`)
+Ham kelimelere Groq Llama-3 kullanarak okunuş (IPA), Türkçe anlam ve zorluk seviyesi ekler.
+
+*   **Nasıl Kullanılır?**
+    `node ADMIN_TOOLS/2-enrich-nlp.js dosya_adi` (Uzantı yazmana gerek yok)
+*   **Başarılı Olduğunu Nasıl Anlarım?**
+    Terminalde her kelime grubunun (Batch) işlendiğini görürsün ve `..._enriched.json` dosyası oluşur.
+
+### 3. Adım: Veritabanına Basma (`3-loader.js`)
+Tüm bu zengin veriyi Supabase'deki `articles`, `article_sentences` ve `article_words` tablolarına birbirine bağlı şekilde yükler.
+
+*   **Nasıl Kullanılır?**
+    `node ADMIN_TOOLS/3-loader.js dosya_adi`
+*   **Başarılı Olduğunu Nasıl Anlarım?**
+    Terminalde `🎉 BAŞARILI! Makale ve tüm detayları yüklendi` yazısını görürsün.
+
+---
+
+## 💡 İpuçları & Püf Noktaları
+*   **Yeni Ses Eklerken:** Önce ses dosyasını `assets/audio/` klasörüne kopyala ve ardından Supabase Storage'a yükleyip linkini `3-loader.js` içine (veya makale satırına) ekle.
+*   **Hata Alırsan:** Sıralamayı (1 -> 2 -> 3) bozmadığından emin ol. Her adım bir öncekinin ürettiği dosyayı kullanır.
+*   **Uygulamada Kontrol:** Yükleme bittiğinde uygulamayı kapatıp aç (veya listeyi yenile), yeni makalenin geldiğini göreceksin.
+
+---
+
+Rehberin hazır ve klasöründe seni bekliyor! Artık uygulamanı binlerce içerikle doldurmak için gereken tüm silahlara sahipsin. Şimdi yeni yüklediğin dersi Reader ekranında test etmeye ne dersin? Karaoke efektini ve kelime dokunuşlarını mutlaka kontrol et!

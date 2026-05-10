@@ -6,69 +6,55 @@ import { Home, Compass, BookOpen, RotateCcw, User } from 'lucide-react-native';
 const { width } = Dimensions.get('window');
 
 const TABS = [
-  { id: 'home', icon: Home },
-  { id: 'discover', icon: Compass },
-  { id: 'reading', icon: BookOpen },
-  { id: 'review', icon: RotateCcw },
-  { id: 'profile', icon: User },
+  { id: 'home', icon: Home, path: '/' },
+  { id: 'discover', icon: Compass, path: '/discover' },
+  { id: 'listen', icon: BookOpen, path: '/listen' },
+  { id: 'review', icon: RotateCcw, path: '/words' },
+  { id: 'profile', icon: User, path: '/profile' },
 ];
 
 export const FloatingNav = ({ activeTab }: { activeTab: string }) => {
   const router = useRouter();
 
-  const handlePress = (id: string) => {
-    if (id === 'home') router.push('/');
-    if (id === 'discover') router.push('/discover');
-    if (id === 'review') router.push('/words');
-    // Diğerleri için şimdilik boş
+  const handlePress = (path: string) => {
+    router.push(path as any);
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.bar}>
-        {TABS.map((tab) => {
-          const isActive = activeTab === tab.id;
-          const Icon = tab.icon;
-          return (
-            <TouchableOpacity 
-              key={tab.id} 
-              style={styles.tab}
-              onPress={() => handlePress(tab.id)}
-            >
-              <Icon 
-                size={22} 
-                color={isActive ? Colors.text.primary : Colors.text.muted} 
-                strokeWidth={isActive ? 2 : 1.5} 
-              />
-            </TouchableOpacity>
-          );
-        })}
-      </View>
+    <View style={styles.bar}>
+      {TABS.map((tab) => {
+        const isActive = activeTab === tab.id;
+        const Icon = tab.icon;
+        return (
+          <TouchableOpacity 
+            key={tab.id} 
+            style={styles.tab}
+            onPress={() => handlePress(tab.path)}
+          >
+            <Icon 
+              size={22} 
+              color={isActive ? Colors.text.primary : Colors.text.muted} 
+              strokeWidth={isActive ? 2 : 1.5} 
+            />
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    position: 'absolute',
-    bottom: 34,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    paddingHorizontal: Spacing.outer,
-  },
   bar: {
-    width: '100%',
+    width: width - 48,
     height: 72,
-    backgroundColor: 'rgba(251, 248, 244, 0.95)', // Secondary surface with slight transparency
+    backgroundColor: 'rgba(251, 248, 244, 0.95)',
     borderRadius: 36,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
     paddingHorizontal: 12,
     borderWidth: 1,
-    borderColor: Colors.border,
-    // Very subtle shadow
+    borderColor: 'rgba(30, 43, 74, 0.05)',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.03,

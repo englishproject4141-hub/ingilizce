@@ -66,7 +66,7 @@ export default function DiscoverScreen() {
       // Demo Verisi Fallback
       if (cont.length === 0) {
         setContinueReading([{
-          id: 'demo-1',
+          id: 'the-art-of-remote-work',
           title: 'Remote Work Culture',
           level: 'B1',
           topic: 'İş',
@@ -155,7 +155,7 @@ export default function DiscoverScreen() {
                 {renderSectionHeader('Kaldığın Yerden')}
                 <ScrollView 
                   horizontal 
-                  paddingLeft={32}
+                  contentContainerStyle={{ paddingLeft: 32, paddingRight: 16 }}
                   showsHorizontalScrollIndicator={false}
                   decelerationRate="fast"
                   snapToInterval={width - 48}
@@ -178,7 +178,7 @@ export default function DiscoverScreen() {
               {renderSectionHeader('Sana Özel')}
               <ScrollView 
                 horizontal 
-                paddingLeft={32}
+                contentContainerStyle={{ paddingLeft: 32, paddingRight: 16 }}
                 showsHorizontalScrollIndicator={false}
               >
                 {recommended.map(item => (
@@ -197,7 +197,7 @@ export default function DiscoverScreen() {
               {renderSectionHeader('Kısa ve Öz')}
               <ScrollView 
                 horizontal 
-                paddingLeft={32}
+                contentContainerStyle={{ paddingLeft: 32, paddingRight: 16 }}
                 showsHorizontalScrollIndicator={false}
               >
                 {shortReads.map(item => (
@@ -286,7 +286,6 @@ export default function DiscoverScreen() {
         </View>
       </Modal>
 
-      <FloatingNav activeTab="discover" />
     </SafeAreaView>
   );
 }

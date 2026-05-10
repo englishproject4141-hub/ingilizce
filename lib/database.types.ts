@@ -69,6 +69,11 @@ export interface Database {
           sentence_index: number;
           start_ms: number | null;
           end_ms: number | null;
+          ipa: string | null;
+          translation_tr: string | null;
+          cefr_level: string | null;
+          is_key: boolean;
+          lemma: string | null;
           created_at: string;
         };
         Insert: Omit<Database['public']['Tables']['article_words']['Row'], 'id' | 'created_at'> & {
@@ -112,6 +117,9 @@ export interface Database {
           daily_goal_minutes: number;
           interests: string[];
           streak_count: number;
+          longest_streak: number;
+          streak_freeze_available: number;
+          last_activity_date: string | null;
           total_words_learned: number;
           created_at: string;
           updated_at: string;
@@ -138,6 +146,8 @@ export interface Database {
           difficulty_feedback: 'easy' | 'right' | 'hard' | null;
           playback_speed: number;
           completed: boolean;
+          last_position_ms: number;
+          qualified_for_streak: boolean;
           created_at: string;
         };
         Insert: Omit<Database['public']['Tables']['reading_sessions']['Row'], 'id' | 'created_at'> & {
